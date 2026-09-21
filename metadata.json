@@ -1,0 +1,6 @@
+{
+  "name": "Smart TV Video Player",
+  "description": "Fullscreen TV video player with activation code license setup, remote control D-pad support, category channel menu for Entertainment, Kids, News, Music, Recently Watched, Favorites, and customizable corner watermark logo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
