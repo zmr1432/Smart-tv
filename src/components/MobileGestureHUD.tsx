@@ -51,7 +51,7 @@ export const MobileGestureHUD: React.FC<MobileGestureHUDProps> = ({
                 {channel.name}
               </span>
               <span className="text-xs text-neutral-400 font-medium">
-                {channel.currentProgram.title}
+                CH {channel.number}
               </span>
             </div>
           </div>

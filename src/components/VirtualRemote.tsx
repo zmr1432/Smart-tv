@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
   Power, Volume2, VolumeX, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, 
-  RotateCcw, Home, Menu, Maximize, Minimize, Film, Sparkles, Radio, Music2,
-  HelpCircle, X, Hash, Heart
+  RotateCcw, Home, Menu, Maximize, Minimize,
+  HelpCircle, X, Heart
 } from 'lucide-react';
-import { CategoryId } from '../types';
 import { sfx } from '../utils/audio';
 
 interface VirtualRemoteProps {
@@ -26,7 +25,6 @@ interface VirtualRemoteProps {
   onVolumeChange: (delta: number) => void;
   onChannelStep: (delta: number) => void;
   onNumberPress: (digit: string) => void;
-  onQuickCategory: (categoryId: CategoryId) => void;
   onOpenHelp: () => void;
 }
 
@@ -49,11 +47,8 @@ export const VirtualRemote: React.FC<VirtualRemoteProps> = ({
   onVolumeChange,
   onChannelStep,
   onNumberPress,
-  onQuickCategory,
   onOpenHelp,
 }) => {
-  const [showNumpad, setShowNumpad] = useState<boolean>(false);
-
   if (!isOpen) return null;
 
   return (
@@ -175,7 +170,7 @@ export const VirtualRemote: React.FC<VirtualRemoteProps> = ({
               onDpadLeft();
             }}
             className="absolute left-2 w-11 h-14 flex items-center justify-center text-neutral-300 hover:text-white hover:bg-neutral-700/60 rounded-l-full transition-colors active:scale-90 cursor-pointer"
-            title="Left / Switch Category"
+            title="Left / Volume Down"
           >
             <ChevronLeft className="w-7 h-7" />
           </button>
@@ -188,12 +183,12 @@ export const VirtualRemote: React.FC<VirtualRemoteProps> = ({
               onDpadRight();
             }}
             className="absolute right-2 w-11 h-14 flex items-center justify-center text-neutral-300 hover:text-white hover:bg-neutral-700/60 rounded-r-full transition-colors active:scale-90 cursor-pointer"
-            title="Right / Switch Category"
+            title="Right / Volume Up"
           >
             <ChevronRight className="w-7 h-7" />
           </button>
 
-          {/* CENTRAL "OK" BUTTON - OPENS THE CATEGORY MENU */}
+          {/* CENTRAL "OK" BUTTON - OPENS CHANNEL LIST */}
           <button
             id="remote-ok-btn"
             onClick={() => {
@@ -201,10 +196,10 @@ export const VirtualRemote: React.FC<VirtualRemoteProps> = ({
               onOkPress();
             }}
             className="relative z-10 w-20 h-20 rounded-full bg-linear-to-b from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-neutral-950 font-black flex flex-col items-center justify-center shadow-lg shadow-amber-500/30 transition-all active:scale-90 cursor-pointer border-2 border-amber-200"
-            title="Open Menu / Select (OK)"
+            title="Open Channel List / Select (OK)"
           >
             <span className="text-xl font-black tracking-tight leading-none">OK</span>
-            <span className="text-[9px] font-bold tracking-tighter opacity-90 mt-0.5">MENU</span>
+            <span className="text-[9px] font-bold tracking-tighter opacity-90 mt-0.5">LIST</span>
           </button>
         </div>
       </div>
@@ -260,10 +255,10 @@ export const VirtualRemote: React.FC<VirtualRemoteProps> = ({
             onMenuPress();
           }}
           className="flex flex-col items-center justify-center p-2 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-300 transition-all active:scale-95 cursor-pointer"
-          title="Category Menu"
+          title="Channel List"
         >
           <Menu className="w-4 h-4 mb-0.5" />
-          <span className="text-[9px] font-bold">MENU</span>
+          <span className="text-[9px] font-bold">LIST</span>
         </button>
       </div>
 
@@ -326,78 +321,20 @@ export const VirtualRemote: React.FC<VirtualRemoteProps> = ({
         </div>
       </div>
 
-      {/* QUICK CATEGORY JUMP SHORTCUTS: 4 Specified Categories */}
+      {/* Direct Channel Selection Number Pad */}
       <div className="border-t border-neutral-800 pt-3">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-            Categories
+            Channel Numbers (123)
           </span>
-          <button
-            id="toggle-numpad-btn"
-            onClick={() => setShowNumpad(!showNumpad)}
-            className="flex items-center gap-1 text-[10px] text-amber-400 hover:underline cursor-pointer"
-          >
-            <Hash className="w-3 h-3" />
-            <span>{showNumpad ? 'Hide' : 'Numbers (123)'}</span>
-          </button>
+          <span className="text-[10px] text-cyan-400 font-mono">
+            Direct Tune
+          </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-1.5">
-          <button
-            id="quick-cat-entertainment"
-            onClick={() => {
-              sfx.playOk();
-              onQuickCategory('entertainment');
-            }}
-            className="flex items-center gap-2 p-2 rounded-xl bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/30 text-purple-300 text-left transition-all active:scale-95 cursor-pointer text-xs font-semibold"
-          >
-            <Film className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">Entertainment</span>
-          </button>
-
-          <button
-            id="quick-cat-kids"
-            onClick={() => {
-              sfx.playOk();
-              onQuickCategory('kids');
-            }}
-            className="flex items-center gap-2 p-2 rounded-xl bg-amber-950/40 hover:bg-amber-900/60 border border-amber-500/30 text-amber-300 text-left transition-all active:scale-95 cursor-pointer text-xs font-semibold"
-          >
-            <Sparkles className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">Kids</span>
-          </button>
-
-          <button
-            id="quick-cat-news"
-            onClick={() => {
-              sfx.playOk();
-              onQuickCategory('news');
-            }}
-            className="flex items-center gap-2 p-2 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-500/30 text-red-300 text-left transition-all active:scale-95 cursor-pointer text-xs font-semibold"
-          >
-            <Radio className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">News</span>
-          </button>
-
-          <button
-            id="quick-cat-music"
-            onClick={() => {
-              sfx.playOk();
-              onQuickCategory('music');
-            }}
-            className="flex items-center gap-2 p-2 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/30 text-emerald-300 text-left transition-all active:scale-95 cursor-pointer text-xs font-semibold"
-          >
-            <Music2 className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">Music</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Number Pad for direct channel selection */}
-      {showNumpad && (
         <div 
           id="remote-numpad-grid"
-          className="border-t border-neutral-800 pt-3 grid grid-cols-3 gap-1.5 animate-in fade-in duration-200"
+          className="grid grid-cols-3 gap-1.5"
         >
           {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
             <button
@@ -407,7 +344,7 @@ export const VirtualRemote: React.FC<VirtualRemoteProps> = ({
                 sfx.playTick();
                 onNumberPress(digit);
               }}
-              className="py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-sm font-mono font-bold text-neutral-200 active:scale-95 transition-all text-center"
+              className="py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-base font-mono font-bold text-neutral-200 active:scale-95 transition-all text-center cursor-pointer border border-white/5"
             >
               {digit}
             </button>
@@ -419,13 +356,13 @@ export const VirtualRemote: React.FC<VirtualRemoteProps> = ({
               sfx.playTick();
               onNumberPress('0');
             }}
-            className="py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-sm font-mono font-bold text-neutral-200 active:scale-95 transition-all text-center"
+            className="py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-base font-mono font-bold text-neutral-200 active:scale-95 transition-all text-center cursor-pointer border border-white/5"
           >
             0
           </button>
           <div />
         </div>
-      )}
+      </div>
     </div>
   );
 };

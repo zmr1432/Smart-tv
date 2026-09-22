@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { CategoryId, Channel, MenuSection } from './types';
-import { CATEGORIES, CHANNELS } from './data/channels';
+import { Channel } from './types';
+import { CHANNELS, CATEGORIES } from './data/channels';
 import { VideoPlayer } from './components/VideoPlayer';
 import { OSDOverlay } from './components/OSDOverlay';
 import { CategoryMenu } from './components/CategoryMenu';
@@ -9,9 +9,11 @@ import { HelpModal } from './components/HelpModal';
 import { CornerLogo } from './components/CornerLogo';
 import { sfx } from './utils/audio';
 import { Smartphone, RotateCw } from 'lucide-react';
-import { isMobileDevice, requestMobileLandscapeFullscreen } from './utils/device';
+import { isMobileDevice, isSmartTVDevice, requestMobileLandscapeFullscreen } from './utils/device';
 import { MobileGestureHUD } from './components/MobileGestureHUD';
+import { MobileHeaderBar } from './components/MobileHeaderBar';
 import { ActivationScreen } from './components/ActivationScreen';
+import { ApkModal } from './components/ApkModal';
 import { getActivationData, deactivateApp, ActivationData } from './utils/activation';
 
 export default function App() {
@@ -89,10 +91,8 @@ export default function App() {
     });
   }, []);
 
-  // Category Menu State (Requested: opens on OK button)
+  // Channel List Menu State (Requested: opens on OK button)
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
-  const [activeCategoryId, setActiveCategoryId] = useState<CategoryId>('entertainment');
-  const [focusedSection, setFocusedSection] = useState<MenuSection>('categories');
   const [focusedIndex, setFocusedIndex] = useState<number>(0);
 
   // Activation State (Required to unlock and open the TV app)
@@ -102,6 +102,7 @@ export default function App() {
   const [isOSDVisible, setIsOSDVisible] = useState<boolean>(true);
   const [isRemoteOpen, setIsRemoteOpen] = useState<boolean>(false);
   const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
+  const [isApkModalOpen, setIsApkModalOpen] = useState<boolean>(false);
   const [numberInputBuffer, setNumberInputBuffer] = useState<string>('');
 
   // Mobile landscape & device state (TV version remains normal)
@@ -189,16 +190,13 @@ export default function App() {
     }
   }, []);
 
-  // Open Category Menu (Opens when OK button or Enter is pressed)
+  // Open Channel List Menu (Opens when OK button or Enter is pressed)
   const openCategoryMenu = useCallback(() => {
     sfx.playOk();
     setIsMenuOpen(true);
-    // Set active category to match current channel category
-    setActiveCategoryId(currentChannel.categoryId);
-    const catIdx = CATEGORIES.findIndex(c => c.id === currentChannel.categoryId);
-    setFocusedSection('categories');
-    setFocusedIndex(catIdx >= 0 ? catIdx : 0);
-  }, [currentChannel.categoryId]);
+    const currIdx = CHANNELS.findIndex(c => c.id === currentChannel.id);
+    setFocusedIndex(currIdx >= 0 ? currIdx : 0);
+  }, [currentChannel.id]);
 
   // Close Category Menu
   const closeCategoryMenu = useCallback(() => {
@@ -231,12 +229,7 @@ export default function App() {
     try {
       localStorage.removeItem('smart_tv_recently_watched');
     } catch (e) {}
-    if (focusedSection === 'recent') {
-      setFocusedSection('categories');
-      const catIdx = CATEGORIES.findIndex(c => c.id === activeCategoryId);
-      setFocusedIndex(catIdx >= 0 ? catIdx : 0);
-    }
-  }, [focusedSection, activeCategoryId]);
+  }, []);
 
   // Surf Channel Up / Down
   const stepChannel = useCallback((direction: number) => {
@@ -447,16 +440,6 @@ export default function App() {
     });
   }, [changeChannel]);
 
-  // Quick category jump
-  const handleQuickCategory = useCallback((catId: CategoryId) => {
-    setActiveCategoryId(catId);
-    const catChannels = CHANNELS.filter(ch => ch.categoryId === catId);
-    if (catChannels.length > 0) {
-      changeChannel(catChannels[0]);
-    }
-    openCategoryMenu();
-  }, [changeChannel, openCategoryMenu]);
-
   // Global Remote Control / Keyboard Listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -478,193 +461,56 @@ export default function App() {
         return;
       }
 
-      // 1. If Category Menu is OPEN:
+      // 1. If Channel List Menu is OPEN:
       if (isMenuOpen) {
-        const categoryChannels = CHANNELS.filter(ch => ch.categoryId === activeCategoryId);
-
         if (e.key === 'Escape' || e.key === 'Backspace') {
           sfx.playBack();
           closeCategoryMenu();
           return;
         }
 
-        // Tata Sky Color Key Shortcuts while in menu:
-        // Red Key (R): All Channels / Entertainment
-        if (e.key === 'r' || e.key === 'R') {
-          sfx.playTick();
-          setActiveCategoryId('entertainment');
-          setFocusedSection('channels');
-          setFocusedIndex(0);
-          return;
-        }
-
-        // Green Key (G): Favorites
-        if (e.key === 'g' || e.key === 'G') {
-          sfx.playTick();
-          setFocusedSection('favorites');
-          setFocusedIndex(0);
-          return;
-        }
-
-        // Yellow Key (Y): Recently Watched
-        if (e.key === 'y' || e.key === 'Y') {
-          sfx.playTick();
-          setFocusedSection('recent');
-          setFocusedIndex(0);
-          return;
-        }
-
         // Blue Key (B): Toggle Favorite on highlighted channel
         if (e.key === 'b' || e.key === 'B') {
-          if (focusedSection === 'channels') {
-            const ch = categoryChannels[focusedIndex];
-            if (ch) toggleFavorite(ch.id);
-          } else if (focusedSection === 'recent') {
-            const ch = recentlyWatched[focusedIndex];
-            if (ch) toggleFavorite(ch.id);
-          } else if (focusedSection === 'favorites') {
-            const ch = favoriteChannels[focusedIndex];
-            if (ch) toggleFavorite(ch.id);
-          }
+          const ch = CHANNELS[focusedIndex];
+          if (ch) toggleFavorite(ch.id);
           return;
         }
 
-        // Left / Right navigation (switches category or horizontal items)
-        if (e.key === 'ArrowLeft') {
+        // ArrowLeft or PageUp: Quick jump up 5 channels
+        if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
           sfx.playTick();
-          if (focusedSection === 'recent') {
-            const maxRecent = Math.min(recentlyWatched.length, 5);
-            if (maxRecent > 0) {
-              setFocusedIndex(prev => (prev > 0 ? prev - 1 : maxRecent - 1));
-            }
-          } else if (focusedSection === 'favorites') {
-            if (favoriteChannels.length > 0) {
-              setFocusedIndex(prev => (prev > 0 ? prev - 1 : favoriteChannels.length - 1));
-            }
-          } else if (focusedSection === 'categories') {
-            const catIdx = CATEGORIES.findIndex(c => c.id === activeCategoryId);
-            const prevCatIdx = catIdx > 0 ? catIdx - 1 : CATEGORIES.length - 1;
-            setFocusedIndex(prevCatIdx);
-            setActiveCategoryId(CATEGORIES[prevCatIdx].id);
-          } else {
-            // In channels list: ArrowLeft switches to previous category tab
-            const catIdx = CATEGORIES.findIndex(c => c.id === activeCategoryId);
-            const prevCatIdx = catIdx > 0 ? catIdx - 1 : CATEGORIES.length - 1;
-            setActiveCategoryId(CATEGORIES[prevCatIdx].id);
-            setFocusedIndex(0);
-          }
+          setFocusedIndex(prev => Math.max(0, prev - 5));
           return;
         }
 
-        if (e.key === 'ArrowRight') {
+        // ArrowRight or PageDown: Quick jump down 5 channels
+        if (e.key === 'ArrowRight' || e.key === 'PageDown') {
           sfx.playTick();
-          if (focusedSection === 'recent') {
-            const maxRecent = Math.min(recentlyWatched.length, 5);
-            if (maxRecent > 0) {
-              setFocusedIndex(prev => (prev < maxRecent - 1 ? prev + 1 : 0));
-            }
-          } else if (focusedSection === 'favorites') {
-            if (favoriteChannels.length > 0) {
-              setFocusedIndex(prev => (prev < favoriteChannels.length - 1 ? prev + 1 : 0));
-            }
-          } else if (focusedSection === 'categories') {
-            const catIdx = CATEGORIES.findIndex(c => c.id === activeCategoryId);
-            const nextCatIdx = catIdx < CATEGORIES.length - 1 ? catIdx + 1 : 0;
-            setFocusedIndex(nextCatIdx);
-            setActiveCategoryId(CATEGORIES[nextCatIdx].id);
-          } else {
-            // In channels list: ArrowRight switches to next category tab
-            const catIdx = CATEGORIES.findIndex(c => c.id === activeCategoryId);
-            const nextCatIdx = catIdx < CATEGORIES.length - 1 ? catIdx + 1 : 0;
-            setActiveCategoryId(CATEGORIES[nextCatIdx].id);
-            setFocusedIndex(0);
-          }
+          setFocusedIndex(prev => Math.min(CHANNELS.length - 1, prev + 5));
           return;
         }
 
-        // Up / Down navigation between recent, favorites, categories, and channels
+        // Up: Previous channel in list
         if (e.key === 'ArrowUp') {
           sfx.playTick();
-          if (focusedSection === 'channels') {
-            if (focusedIndex > 0) {
-              setFocusedIndex(prev => prev - 1);
-            } else {
-              setFocusedSection('categories');
-              const catIdx = CATEGORIES.findIndex(c => c.id === activeCategoryId);
-              setFocusedIndex(catIdx >= 0 ? catIdx : 0);
-            }
-          } else if (focusedSection === 'categories') {
-            if (favoriteChannels.length > 0) {
-              setFocusedSection('favorites');
-              setFocusedIndex(0);
-            } else if (recentlyWatched.length > 0) {
-              setFocusedSection('recent');
-              setFocusedIndex(0);
-            }
-          } else if (focusedSection === 'favorites') {
-            if (recentlyWatched.length > 0) {
-              setFocusedSection('recent');
-              setFocusedIndex(0);
-            }
-          }
+          setFocusedIndex(prev => (prev > 0 ? prev - 1 : CHANNELS.length - 1));
           return;
         }
 
+        // Down: Next channel in list
         if (e.key === 'ArrowDown') {
           sfx.playTick();
-          if (focusedSection === 'recent') {
-            if (favoriteChannels.length > 0) {
-              setFocusedSection('favorites');
-              setFocusedIndex(0);
-            } else {
-              setFocusedSection('categories');
-              const catIdx = CATEGORIES.findIndex(c => c.id === activeCategoryId);
-              setFocusedIndex(catIdx >= 0 ? catIdx : 0);
-            }
-          } else if (focusedSection === 'favorites') {
-            setFocusedSection('categories');
-            const catIdx = CATEGORIES.findIndex(c => c.id === activeCategoryId);
-            setFocusedIndex(catIdx >= 0 ? catIdx : 0);
-          } else if (focusedSection === 'categories') {
-            setFocusedSection('channels');
-            setFocusedIndex(0);
-          } else if (focusedSection === 'channels') {
-            if (focusedIndex < categoryChannels.length - 1) {
-              setFocusedIndex(prev => prev + 1);
-            }
-          }
+          setFocusedIndex(prev => (prev < CHANNELS.length - 1 ? prev + 1 : 0));
           return;
         }
 
-        // "OK" button (Enter or Space) while in menu
-        if (e.key === 'Enter' || e.code === 'NumpadEnter') {
-          if (focusedSection === 'recent') {
-            const selectedRecent = recentlyWatched[focusedIndex];
-            if (selectedRecent) {
-              sfx.playChannelSwitch();
-              changeChannel(selectedRecent);
-              closeCategoryMenu();
-            }
-          } else if (focusedSection === 'favorites') {
-            const selectedFav = favoriteChannels[focusedIndex];
-            if (selectedFav) {
-              sfx.playChannelSwitch();
-              changeChannel(selectedFav);
-              closeCategoryMenu();
-            }
-          } else if (focusedSection === 'categories') {
-            sfx.playOk();
-            // Move down to channels of this category
-            setFocusedSection('channels');
-            setFocusedIndex(0);
-          } else {
-            // Tune to this channel
-            const selectedChannel = categoryChannels[focusedIndex];
-            if (selectedChannel) {
-              sfx.playChannelSwitch();
-              changeChannel(selectedChannel);
-              closeCategoryMenu();
-            }
+        // "OK" button (Enter or Space) while in menu: Tune to highlighted channel
+        if (e.key === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') {
+          const selectedChannel = CHANNELS[focusedIndex];
+          if (selectedChannel) {
+            sfx.playChannelSwitch();
+            changeChannel(selectedChannel);
+            closeCategoryMenu();
           }
           return;
         }
@@ -764,8 +610,6 @@ export default function App() {
   }, [
     isMenuOpen,
     isHelpOpen,
-    activeCategoryId,
-    focusedSection,
     focusedIndex,
     openCategoryMenu,
     closeCategoryMenu,
@@ -803,14 +647,21 @@ export default function App() {
   // If app is not yet activated, display the Activation Screen
   if (!activationData || !activationData.isActivated) {
     return (
-      <ActivationScreen
-        onActivated={() => {
-          const fresh = getActivationData();
-          setActivationData(fresh);
-          setIsPlaying(true);
-          triggerOSD(6000);
-        }}
-      />
+      <>
+        <ActivationScreen
+          onActivated={() => {
+            const fresh = getActivationData();
+            setActivationData(fresh);
+            setIsPlaying(true);
+            triggerOSD(6000);
+          }}
+          onOpenApkModal={() => setIsApkModalOpen(true)}
+        />
+        <ApkModal
+          isOpen={isApkModalOpen}
+          onClose={() => setIsApkModalOpen(false)}
+        />
+      </>
     );
   }
 
@@ -865,10 +716,7 @@ export default function App() {
         isMuted={isMuted}
         volume={volume}
         onPlayStateChange={setIsPlaying}
-        onVideoClick={() => {
-          // Clicking the video toggles OSD or opens menu
-          triggerOSD();
-        }}
+        onVideoClick={triggerOSD}
       />
 
       {/* 2. TV On-Screen Display (OSD) Overlay */}
@@ -888,7 +736,16 @@ export default function App() {
         onToggleRemote={() => setIsRemoteOpen(prev => !prev)}
         isRemoteOpen={isRemoteOpen}
         onOpenHelp={() => setIsHelpOpen(true)}
+        onOpenApkModal={() => setIsApkModalOpen(true)}
       />
+
+      {/* 2.2 Mobile-Only Small Menu Button on Right Side (Never visible in TV version) */}
+      {isMobile && !isSmartTVDevice() && (
+        <MobileHeaderBar
+          isMenuOpen={isMenuOpen}
+          onOpenMenu={openCategoryMenu}
+        />
+      )}
 
       {/* 2.5 Right-Side Corner Logo (Requested by User) */}
       <CornerLogo
@@ -896,31 +753,20 @@ export default function App() {
         isMenuOpen={isMenuOpen}
       />
 
-      {/* 3. Channel Category Menu Modal (Opens on OK Button) */}
+      {/* 3. Channel Menu Modal (Opens on OK Button) */}
       <CategoryMenu
         isOpen={isMenuOpen}
-        activeCategoryId={activeCategoryId}
         currentChannel={currentChannel}
         channels={CHANNELS}
-        recentlyWatched={recentlyWatched}
-        favoriteChannels={favoriteChannels}
         favoriteChannelIds={favoriteChannelIds}
         focusedIndex={focusedIndex}
-        focusedSection={focusedSection}
-        onSelectCategory={(catId) => {
-          setActiveCategoryId(catId);
-          setFocusedSection('channels');
-          setFocusedIndex(0);
-        }}
         onSelectChannel={(channel) => {
           changeChannel(channel);
           closeCategoryMenu();
         }}
         onToggleFavorite={toggleFavorite}
-        onClearRecentlyWatched={clearRecentlyWatched}
         onClose={closeCategoryMenu}
         setFocusedIndex={setFocusedIndex}
-        setFocusedSection={setFocusedSection}
       />
 
       {/* 4. Virtual Smart TV Remote Control Widget */}
@@ -933,110 +779,28 @@ export default function App() {
         onClose={() => setIsRemoteOpen(false)}
         onDpadUp={() => {
           if (isMenuOpen) {
-            if (focusedSection === 'channels') {
-              if (focusedIndex > 0) {
-                setFocusedIndex(prev => prev - 1);
-              } else {
-                setFocusedSection('categories');
-                const catIdx = CATEGORIES.findIndex(c => c.id === activeCategoryId);
-                setFocusedIndex(catIdx >= 0 ? catIdx : 0);
-              }
-            } else if (focusedSection === 'categories') {
-              if (favoriteChannels.length > 0) {
-                setFocusedSection('favorites');
-                setFocusedIndex(0);
-              } else if (recentlyWatched.length > 0) {
-                setFocusedSection('recent');
-                setFocusedIndex(0);
-              }
-            } else if (focusedSection === 'favorites') {
-              if (recentlyWatched.length > 0) {
-                setFocusedSection('recent');
-                setFocusedIndex(0);
-              }
-            }
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
           } else {
             stepChannel(-1);
           }
         }}
         onDpadDown={() => {
           if (isMenuOpen) {
-            if (focusedSection === 'recent') {
-              if (favoriteChannels.length > 0) {
-                setFocusedSection('favorites');
-                setFocusedIndex(0);
-              } else {
-                setFocusedSection('categories');
-                const catIdx = CATEGORIES.findIndex(c => c.id === activeCategoryId);
-                setFocusedIndex(catIdx >= 0 ? catIdx : 0);
-              }
-            } else if (focusedSection === 'favorites') {
-              setFocusedSection('categories');
-              const catIdx = CATEGORIES.findIndex(c => c.id === activeCategoryId);
-              setFocusedIndex(catIdx >= 0 ? catIdx : 0);
-            } else if (focusedSection === 'categories') {
-              setFocusedSection('channels');
-              setFocusedIndex(0);
-            } else if (focusedSection === 'channels') {
-              const catChannels = CHANNELS.filter(ch => ch.categoryId === activeCategoryId);
-              if (focusedIndex < catChannels.length - 1) {
-                setFocusedIndex(prev => prev + 1);
-              }
-            }
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
           } else {
             stepChannel(1);
           }
         }}
         onDpadLeft={() => {
           if (isMenuOpen) {
-            if (focusedSection === 'recent') {
-              const maxRecent = Math.min(recentlyWatched.length, 5);
-              if (maxRecent > 0) {
-                setFocusedIndex(prev => (prev > 0 ? prev - 1 : maxRecent - 1));
-              }
-            } else if (focusedSection === 'favorites') {
-              if (favoriteChannels.length > 0) {
-                setFocusedIndex(prev => (prev > 0 ? prev - 1 : favoriteChannels.length - 1));
-              }
-            } else if (focusedSection === 'categories') {
-              const catIdx = CATEGORIES.findIndex(c => c.id === activeCategoryId);
-              const prevIdx = catIdx > 0 ? catIdx - 1 : CATEGORIES.length - 1;
-              setActiveCategoryId(CATEGORIES[prevIdx].id);
-              setFocusedIndex(prevIdx);
-            } else {
-              // In channels: switch to previous category
-              const catIdx = CATEGORIES.findIndex(c => c.id === activeCategoryId);
-              const prevIdx = catIdx > 0 ? catIdx - 1 : CATEGORIES.length - 1;
-              setActiveCategoryId(CATEGORIES[prevIdx].id);
-              setFocusedIndex(0);
-            }
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
           } else {
             adjustVolume(-5);
           }
         }}
         onDpadRight={() => {
           if (isMenuOpen) {
-            if (focusedSection === 'recent') {
-              const maxRecent = Math.min(recentlyWatched.length, 5);
-              if (maxRecent > 0) {
-                setFocusedIndex(prev => (prev < maxRecent - 1 ? prev + 1 : 0));
-              }
-            } else if (focusedSection === 'favorites') {
-              if (favoriteChannels.length > 0) {
-                setFocusedIndex(prev => (prev < favoriteChannels.length - 1 ? prev + 1 : 0));
-              }
-            } else if (focusedSection === 'categories') {
-              const catIdx = CATEGORIES.findIndex(c => c.id === activeCategoryId);
-              const nextIdx = catIdx < CATEGORIES.length - 1 ? catIdx + 1 : 0;
-              setActiveCategoryId(CATEGORIES[nextIdx].id);
-              setFocusedIndex(nextIdx);
-            } else {
-              // In channels: switch to next category
-              const catIdx = CATEGORIES.findIndex(c => c.id === activeCategoryId);
-              const nextIdx = catIdx < CATEGORIES.length - 1 ? catIdx + 1 : 0;
-              setActiveCategoryId(CATEGORIES[nextIdx].id);
-              setFocusedIndex(0);
-            }
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
           } else {
             adjustVolume(5);
           }
@@ -1045,28 +809,7 @@ export default function App() {
           if (!isMenuOpen) {
             openCategoryMenu();
           } else {
-            if (focusedSection === 'recent') {
-              const selectedRecent = recentlyWatched[focusedIndex];
-              if (selectedRecent) {
-                changeChannel(selectedRecent);
-                closeCategoryMenu();
-              }
-            } else if (focusedSection === 'favorites') {
-              const selectedFav = favoriteChannels[focusedIndex];
-              if (selectedFav) {
-                changeChannel(selectedFav);
-                closeCategoryMenu();
-              }
-            } else if (focusedSection === 'channels') {
-              const catChannels = CHANNELS.filter(ch => ch.categoryId === activeCategoryId);
-              if (catChannels[focusedIndex]) {
-                changeChannel(catChannels[focusedIndex]);
-                closeCategoryMenu();
-              }
-            } else {
-              setFocusedSection('channels');
-              setFocusedIndex(0);
-            }
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
           }
         }}
         onBackPress={() => {
@@ -1092,7 +835,6 @@ export default function App() {
         onVolumeChange={adjustVolume}
         onChannelStep={stepChannel}
         onNumberPress={handleDigitInput}
-        onQuickCategory={handleQuickCategory}
         onOpenHelp={() => setIsHelpOpen(true)}
       />
 
@@ -1106,6 +848,13 @@ export default function App() {
           deactivateApp();
           setActivationData(null);
         }}
+        onOpenApkModal={() => setIsApkModalOpen(true)}
+      />
+
+      {/* 5.5 APK & WebAPK Install / Download Modal */}
+      <ApkModal
+        isOpen={isApkModalOpen}
+        onClose={() => setIsApkModalOpen(false)}
       />
 
       {/* 6. Mobile Portrait Landscape Helper (Only for mobile in portrait mode; TV version is untouched) */}

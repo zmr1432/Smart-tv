@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Tv, Keyboard, Smartphone, ShieldCheck, KeyRound, RefreshCw } from 'lucide-react';
+import { X, Tv, Keyboard, Smartphone, ShieldCheck, KeyRound, RefreshCw, Download } from 'lucide-react';
 import { sfx } from '../utils/audio';
 
 interface HelpModalProps {
@@ -8,6 +8,7 @@ interface HelpModalProps {
   deviceId?: string;
   activationCode?: string;
   onDeactivate?: () => void;
+  onOpenApkModal?: () => void;
 }
 
 export const HelpModal: React.FC<HelpModalProps> = ({ 
@@ -16,6 +17,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
   deviceId,
   activationCode,
   onDeactivate,
+  onOpenApkModal,
 }) => {
   if (!isOpen) return null;
 
@@ -62,7 +64,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
               <span className="w-2 h-2 rounded-full bg-amber-400" />
               <div>
                 <div className="font-bold text-amber-300">OK Button / Enter Key</div>
-                <div className="text-xs text-neutral-400">Open TV Guide & select channel</div>
+                <div className="text-xs text-neutral-400">Open Channel Menu & select channel</div>
               </div>
             </div>
             <kbd className="px-2 py-1 rounded-lg bg-amber-400 text-neutral-950 font-black font-mono text-xs">
@@ -140,7 +142,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
               <span className="w-2 h-2 rounded-full bg-neutral-400" />
               <div>
                 <div className="font-semibold text-white">Esc / Backspace</div>
-                <div className="text-xs text-neutral-400">Close TV guide or return to player</div>
+                <div className="text-xs text-neutral-400">Close channel menu or return to player</div>
               </div>
             </div>
             <kbd className="px-2 py-1 rounded-lg bg-neutral-700 text-neutral-200 font-mono text-xs">
@@ -207,6 +209,21 @@ export const HelpModal: React.FC<HelpModalProps> = ({
             You can operate the player using the on-screen virtual remote, computer keyboard shortcuts, or your Smart TV remote.
           </span>
         </div>
+
+        {/* APK / App Install Section */}
+        {onOpenApkModal && (
+          <button
+            id="help-open-apk-modal-btn"
+            onClick={() => {
+              sfx.playOk();
+              onOpenApkModal();
+            }}
+            className="w-full py-2.5 px-4 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-xs font-bold text-amber-300 flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98"
+          >
+            <Download className="w-3.5 h-3.5 text-amber-400" />
+            <span>APK ఫైల్ డౌన్‌లోడ్ & ఇన్‌స్టాలేషన్ ఆప్షన్స్ (APK & WebAPK)</span>
+          </button>
+        )}
 
         <button
           id="ack-help-btn"

@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Channel } from '../types';
-import { AlertCircle, Loader2, Play, VolumeX } from 'lucide-react';
+import { AlertCircle, Play, VolumeX } from 'lucide-react';
 import { requestMobileLandscapeFullscreen, isMobileDevice } from '../utils/device';
+import Hls from 'hls.js';
 
 interface VideoPlayerProps {
   channel: Channel;
@@ -12,7 +13,7 @@ interface VideoPlayerProps {
   onVideoClick?: () => void;
 }
 
-export const VideoPlayer: React.FC<VideoPlayerProps> = ({
+export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
   channel,
   isPlaying,
   isMuted,
@@ -21,62 +22,151 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onVideoClick,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [isBuffering, setIsBuffering] = useState<boolean>(true);
+  const hlsRef = useRef<Hls | null>(null);
   const [hasError, setHasError] = useState<boolean>(false);
   const [usingFallback, setUsingFallback] = useState<boolean>(false);
+  const isPlayingRef = useRef<boolean>(isPlaying);
 
-  // When channel changes, reset video and play
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  // Handle fatal video errors smoothly
+  const handleVideoError = useCallback(() => {
+    if (!usingFallback && channel.fallbackUrl && videoRef.current) {
+      setUsingFallback(true);
+      const v = videoRef.current;
+      v.src = channel.fallbackUrl;
+      v.load();
+      const p = v.play();
+      if (p !== undefined) {
+        p.catch(() => setHasError(true));
+      }
+    } else {
+      setHasError(true);
+    }
+  }, [channel.fallbackUrl, usingFallback]);
+
+  // Direct Stream Player: Plays directly like Google Chrome without buffer restrictions or loading overlays
   useEffect(() => {
     setHasError(false);
     setUsingFallback(false);
-    setIsBuffering(true);
 
-    if (videoRef.current) {
-      videoRef.current.src = channel.streamUrl;
-      videoRef.current.load();
-      if (isPlaying) {
-        videoRef.current.play().catch(() => {
-          // Autoplay policy fallback: try muted
-          if (videoRef.current) {
-            videoRef.current.muted = true;
-            videoRef.current.play().catch(() => {
-              onPlayStateChange(false);
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+
+    const video = videoRef.current;
+    if (!video) return;
+
+    const streamUrl = channel.streamUrl;
+    const isHls = streamUrl.includes('.m3u8') || (!streamUrl.endsWith('.mp4') && streamUrl.startsWith('http'));
+
+    // 1. Direct Native Playback (Safari / iOS / Chrome Native HLS if enabled)
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = streamUrl;
+      if (isPlayingRef.current) {
+        const p = video.play();
+        if (p !== undefined) {
+          p.catch(() => {
+            video.muted = true;
+            video.play().catch(() => onPlayStateChange(false));
+          });
+        }
+      }
+    } 
+    // 2. Direct Hls.js Playback - standard direct stream, NO buffer limits or watchdog interference
+    else if (isHls && Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true,
+        autoStartLoad: true,
+        // Standard streaming without custom buffer delays or watchdog interruptions
+      });
+      hlsRef.current = hls;
+
+      hls.loadSource(streamUrl);
+      hls.attachMedia(video);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (isPlayingRef.current) {
+          const p = video.play();
+          if (p !== undefined) {
+            p.catch(() => {
+              // Direct fallback to muted play if browser policy requires it
+              video.muted = true;
+              video.play().catch(() => onPlayStateChange(false));
             });
           }
-        });
+        }
+      });
+
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              hls.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              hls.recoverMediaError();
+              break;
+            default:
+              hls.destroy();
+              hlsRef.current = null;
+              handleVideoError();
+              break;
+          }
+        }
+      });
+    } 
+    // 3. Direct MP4 / Standard Media Playback
+    else {
+      video.src = streamUrl;
+      if (isPlayingRef.current) {
+        const p = video.play();
+        if (p !== undefined) {
+          p.catch(() => {
+            video.muted = true;
+            video.play().catch(() => onPlayStateChange(false));
+          });
+        }
       }
     }
-  }, [channel.id]);
 
-  // Volume and mute sync
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, [channel.id, channel.streamUrl, handleVideoError, onPlayStateChange]);
+
+  // Volume & Mute synchronization
   useEffect(() => {
     if (videoRef.current) {
       videoRef.current.muted = isMuted;
-      videoRef.current.volume = isMuted ? 0 : volume / 100;
+      videoRef.current.volume = isMuted ? 0 : Math.min(1, Math.max(0, volume / 100));
     }
   }, [isMuted, volume]);
 
-  // Play / Pause sync
+  // Play / Pause synchronization
   useEffect(() => {
-    if (!videoRef.current) return;
-    if (isPlaying) {
-      videoRef.current.play().catch(() => onPlayStateChange(false));
-    } else {
-      videoRef.current.pause();
-    }
-  }, [isPlaying]);
+    const v = videoRef.current;
+    if (!v) return;
 
-  const handleVideoError = () => {
-    if (!usingFallback && channel.fallbackUrl && videoRef.current) {
-      setUsingFallback(true);
-      videoRef.current.src = channel.fallbackUrl;
-      videoRef.current.load();
-      videoRef.current.play().catch(() => setHasError(true));
+    if (isPlaying) {
+      if (v.paused) {
+        const p = v.play();
+        if (p !== undefined) {
+          p.catch(() => onPlayStateChange(false));
+        }
+      }
     } else {
-      setHasError(true);
-      setIsBuffering(false);
+      if (!v.paused) {
+        v.pause();
+      }
     }
-  };
+  }, [isPlaying, onPlayStateChange]);
 
   return (
     <div 
@@ -92,6 +182,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         onVideoClick?.();
       }}
     >
+      {/* Video Element - Direct Playback, No Buffer Restriction */}
       <video
         ref={videoRef}
         id="main-tv-video-element"
@@ -99,41 +190,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         style={{ objectFit: 'fill', width: '100%', height: '100%' }}
         autoPlay
         playsInline
-        loop
         preload="auto"
-        onWaiting={() => setIsBuffering(true)}
-        onPlaying={() => {
-          setIsBuffering(false);
-          onPlayStateChange(true);
-          // Automatically trigger landscape fullscreen on mobile when video plays
-          if (isMobileDevice()) {
-            requestMobileLandscapeFullscreen(
-              document.getElementById('smart-tv-app-root') || videoRef.current?.parentElement,
-              videoRef.current
-            );
-          }
-        }}
-        onCanPlay={() => setIsBuffering(false)}
+        onPlaying={() => onPlayStateChange(true)}
         onError={handleVideoError}
       />
 
-      {/* Buffering Indicator */}
-      {isBuffering && !hasError && (
-        <div 
-          id="video-buffering-indicator" 
-          className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-xs pointer-events-none z-10"
-        >
-          <div className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-neutral-900/90 border border-white/10 text-white shadow-2xl">
-            <Loader2 className="w-6 h-6 animate-spin text-amber-400" />
-            <div className="flex flex-col">
-              <span className="text-sm font-semibold tracking-wide">Loading channel...</span>
-              <span className="text-xs text-neutral-400 font-mono">Tuning {channel.name} ({channel.number})</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Play/Pause overlay icon when paused */}
+      {/* Play/Pause overlay icon when user explicitly pauses */}
       {!isPlaying && (
         <div 
           id="video-paused-overlay"
@@ -156,7 +218,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Error Fallback broadcast screen */}
+      {/* Error Fallback screen */}
       {hasError && (
         <div 
           id="video-error-fallback"
@@ -165,28 +227,29 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-4">
             <AlertCircle className="w-8 h-8" />
           </div>
-          <h3 className="text-xl font-bold text-white mb-1">{channel.name} - Signal Check</h3>
+          <h3 className="text-xl font-bold text-white mb-1">{channel.name}</h3>
           <p className="text-neutral-400 text-sm max-w-md mb-5">
-            Live stream is temporarily unavailable. Please select another channel using the remote or guide.
+            ఛానల్ సిగ్నల్ అందుబాటులో లేదు. దయచేసి వేరే ఛానల్‌ను ఎంచుకోండి.
           </p>
           <button
             id="retry-stream-btn"
             onClick={(e) => {
               e.stopPropagation();
               setHasError(false);
-              setIsBuffering(true);
               if (videoRef.current) {
                 videoRef.current.src = channel.streamUrl;
                 videoRef.current.load();
                 videoRef.current.play();
               }
             }}
-            className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-semibold text-sm transition-colors shadow-lg active:scale-95"
+            className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-semibold text-sm transition-colors shadow-lg active:scale-95 cursor-pointer"
           >
-            Retry Stream
+            రీట్రై చేయండి (Retry)
           </button>
         </div>
       )}
     </div>
   );
-};
+});
+
+VideoPlayer.displayName = 'VideoPlayer';

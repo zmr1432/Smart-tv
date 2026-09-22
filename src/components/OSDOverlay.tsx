@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Channel, Category } from '../types';
-import { Volume2, VolumeX, Clock, Heart, ShieldCheck } from 'lucide-react';
+import { Volume2, VolumeX, Clock, Heart, ShieldCheck, Download } from 'lucide-react';
 
 interface OSDOverlayProps {
   channel: Channel;
@@ -18,6 +18,7 @@ interface OSDOverlayProps {
   onToggleRemote: () => void;
   isRemoteOpen: boolean;
   onOpenHelp?: () => void;
+  onOpenApkModal?: () => void;
 }
 
 export const OSDOverlay: React.FC<OSDOverlayProps> = ({
@@ -36,6 +37,7 @@ export const OSDOverlay: React.FC<OSDOverlayProps> = ({
   onToggleRemote,
   isRemoteOpen,
   onOpenHelp,
+  onOpenApkModal,
 }) => {
   // Live local time state (ticks every second for real-time digital clock)
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -139,8 +141,19 @@ export const OSDOverlay: React.FC<OSDOverlayProps> = ({
               <span className="text-2xl font-mono leading-none">{channel.number}</span>
             </div>
 
-            <div className="w-12 h-12 rounded-2xl bg-neutral-800/80 border border-white/10 flex items-center justify-center text-2xl shadow-inner shrink-0">
-              {channel.logo}
+            <div className="w-12 h-12 rounded-2xl bg-neutral-800/80 border border-white/10 flex items-center justify-center text-2xl shadow-inner shrink-0 overflow-hidden">
+              {channel.logo && channel.logo.startsWith('http') ? (
+                <img 
+                  src={channel.logo} 
+                  alt={channel.name} 
+                  className="w-full h-full object-contain p-1" 
+                  onError={(e) => {
+                    (e.currentTarget as HTMLElement).style.display = 'none';
+                  }} 
+                />
+              ) : (
+                <span>{channel.logo || '📺'}</span>
+              )}
             </div>
 
             <div className="flex flex-col justify-center">
@@ -167,6 +180,19 @@ export const OSDOverlay: React.FC<OSDOverlayProps> = ({
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                 <span className="hidden sm:inline text-[11px]">యాక్టివేట్ అయింది</span>
+              </button>
+            )}
+
+            {/* APK / App Install Button */}
+            {onOpenApkModal && (
+              <button
+                id="banner-open-apk-modal-btn"
+                onClick={onOpenApkModal}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-300 hover:text-amber-200 text-xs font-bold transition-all cursor-pointer select-none shadow-sm active:scale-95"
+                title="Install App as APK (WebAPK / PWA)"
+              >
+                <Download className="w-3.5 h-3.5 text-amber-400" />
+                <span className="text-[11px]">APK ఇన్‌స్టాల్</span>
               </button>
             )}
 
@@ -214,7 +240,7 @@ export const OSDOverlay: React.FC<OSDOverlayProps> = ({
           <div className="flex items-center gap-3 sm:gap-5 flex-wrap">
             <span className="flex items-center gap-1.5">
               <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-amber-300 font-mono font-bold text-[10px] border border-white/10">OK / Enter</kbd>
-              <span>Menu</span>
+              <span>Channel List</span>
             </span>
             <span className="flex items-center gap-1.5">
               <kbd className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 font-mono font-bold text-[10px] border border-rose-500/30">B / Fav</kbd>
@@ -226,7 +252,7 @@ export const OSDOverlay: React.FC<OSDOverlayProps> = ({
             </span>
             <span className="flex items-center gap-1.5">
               <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white font-mono font-bold text-[10px] border border-white/10">◄ / ►</kbd>
-              <span>Volume / Category</span>
+              <span>Volume</span>
             </span>
             <span className="flex items-center gap-1.5">
               <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white font-mono font-bold text-[10px] border border-white/10">Esc</kbd>

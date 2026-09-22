@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="128" fill="#0c0a09"/>
+  <circle cx="256" cy="256" r="210" fill="#1c1917" stroke="#f59e0b" stroke-width="8"/>
+  <!-- Antennas -->
+  <line x1="256" y1="180" x2="190" y2="100" stroke="#f59e0b" stroke-width="12" stroke-linecap="round"/>
+  <line x1="256" y1="180" x2="322" y2="100" stroke="#f59e0b" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="190" cy="100" r="10" fill="#fbbf24"/>
+  <circle cx="322" cy="100" r="10" fill="#fbbf24"/>
+  <!-- TV Body -->
+  <rect x="116" y="170" width="280" height="200" rx="24" fill="#292524" stroke="#f59e0b" stroke-width="12"/>
+  <!-- Screen -->
+  <rect x="136" y="190" width="190" height="160" rx="12" fill="#09090b"/>
+  <!-- Play Icon on Screen -->
+  <polygon points="215,245 255,270 215,295" fill="#f59e0b"/>
+  <!-- TV Knobs -->
+  <circle cx="360" cy="225" r="14" fill="#f59e0b"/>
+  <circle cx="360" cy="270" r="14" fill="#f59e0b"/>
+  <!-- Speaker lines -->
+  <line x1="345" y1="315" x2="375" y2="315" stroke="#78716c" stroke-width="4" stroke-linecap="round"/>
+  <line x1="345" y1="330" x2="375" y2="330" stroke="#78716c" stroke-width="4" stroke-linecap="round"/>
+  <!-- Stand -->
+  <polygon points="216,370 296,370 316,400 196,400" fill="#f59e0b"/>
+</svg>

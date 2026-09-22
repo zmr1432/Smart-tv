@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Tv, KeyRound, CheckCircle2, AlertCircle, Copy, Check, Sparkles, ShieldCheck, HelpCircle } from 'lucide-react';
+import { Tv, KeyRound, CheckCircle2, AlertCircle, Copy, Check, Sparkles, ShieldCheck, HelpCircle, Download } from 'lucide-react';
 import { sfx } from '../utils/audio';
 import { getDeviceId, activateWithCode } from '../utils/activation';
 
 interface ActivationScreenProps {
   onActivated: (code: string) => void;
+  onOpenApkModal?: () => void;
 }
 
-export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated }) => {
+export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated, onOpenApkModal }) => {
   const [inputCode, setInputCode] = useState<string>('');
   const [deviceId, setDeviceId] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
@@ -285,6 +286,22 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated 
             </>
           )}
         </button>
+
+        {/* APK Install / Download Modal Button */}
+        {onOpenApkModal && (
+          <button
+            type="button"
+            id="activation-open-apk-modal-btn"
+            onClick={() => {
+              sfx.playOk();
+              onOpenApkModal();
+            }}
+            className="w-full mt-2.5 py-2.5 px-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-amber-400/40 text-xs font-bold text-neutral-300 hover:text-amber-300 flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98"
+          >
+            <Download className="w-3.5 h-3.5 text-amber-400" />
+            <span>APK ఫైల్ డౌన్‌లోడ్ & ఇన్‌స్టాలేషన్ గైడ్ (APK Download & Install)</span>
+          </button>
+        )}
 
         {/* Footer Instructions */}
         <div className="mt-4 text-center text-[11px] text-neutral-400 leading-relaxed flex items-center justify-center gap-1.5">
