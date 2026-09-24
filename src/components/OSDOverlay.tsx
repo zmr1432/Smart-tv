@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Channel, Category } from '../types';
-import { Volume2, VolumeX, Clock, Heart, ShieldCheck, Download } from 'lucide-react';
+import { Volume2, VolumeX, Clock, Heart, HelpCircle } from 'lucide-react';
 
 interface OSDOverlayProps {
   channel: Channel;
@@ -18,7 +18,6 @@ interface OSDOverlayProps {
   onToggleRemote: () => void;
   isRemoteOpen: boolean;
   onOpenHelp?: () => void;
-  onOpenApkModal?: () => void;
 }
 
 export const OSDOverlay: React.FC<OSDOverlayProps> = ({
@@ -37,7 +36,6 @@ export const OSDOverlay: React.FC<OSDOverlayProps> = ({
   onToggleRemote,
   isRemoteOpen,
   onOpenHelp,
-  onOpenApkModal,
 }) => {
   // Live local time state (ticks every second for real-time digital clock)
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -170,29 +168,16 @@ export const OSDOverlay: React.FC<OSDOverlayProps> = ({
 
           {/* Right: Actions, Favorite & Digital Clock */}
           <div className="flex items-center justify-between md:justify-end gap-3 border-t md:border-t-0 pt-3 md:pt-0 border-white/10">
-            {/* Activation Status Badge */}
+            {/* Remote Guide & Help Button */}
             {onOpenHelp && (
               <button
-                id="banner-activation-status-badge"
+                id="banner-help-btn"
                 onClick={onOpenHelp}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-all cursor-pointer select-none"
-                title="App Activated (Click for License & Help)"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-neutral-200 hover:text-white text-xs font-semibold transition-all cursor-pointer select-none"
+                title="Remote Control Guide & Shortcuts"
               >
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="hidden sm:inline text-[11px]">యాక్టివేట్ అయింది</span>
-              </button>
-            )}
-
-            {/* APK / App Install Button */}
-            {onOpenApkModal && (
-              <button
-                id="banner-open-apk-modal-btn"
-                onClick={onOpenApkModal}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-300 hover:text-amber-200 text-xs font-bold transition-all cursor-pointer select-none shadow-sm active:scale-95"
-                title="Install App as APK (WebAPK / PWA)"
-              >
-                <Download className="w-3.5 h-3.5 text-amber-400" />
-                <span className="text-[11px]">APK ఇన్‌స్టాల్</span>
+                <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline text-[11px]">రిమోట్ గైడ్ (Help)</span>
               </button>
             )}
 

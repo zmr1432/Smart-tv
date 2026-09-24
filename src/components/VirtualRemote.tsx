@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   Power, Volume2, VolumeX, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, 
   RotateCcw, Home, Menu, Maximize, Minimize,
-  HelpCircle, X, Heart
+  HelpCircle, X, Heart, KeyRound
 } from 'lucide-react';
 import { sfx } from '../utils/audio';
 
@@ -26,6 +26,7 @@ interface VirtualRemoteProps {
   onChannelStep: (delta: number) => void;
   onNumberPress: (digit: string) => void;
   onOpenHelp: () => void;
+  onOpenActivation?: () => void;
 }
 
 export const VirtualRemote: React.FC<VirtualRemoteProps> = ({
@@ -48,6 +49,7 @@ export const VirtualRemote: React.FC<VirtualRemoteProps> = ({
   onChannelStep,
   onNumberPress,
   onOpenHelp,
+  onOpenActivation,
 }) => {
   if (!isOpen) return null;
 
@@ -67,6 +69,16 @@ export const VirtualRemote: React.FC<VirtualRemoteProps> = ({
         </div>
 
         <div className="flex items-center gap-1">
+          {onOpenActivation && (
+            <button
+              id="remote-activation-btn"
+              onClick={onOpenActivation}
+              className="p-1.5 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-amber-400 transition-colors"
+              title="Device Activation / లైసెన్స్"
+            >
+              <KeyRound className="w-4 h-4" />
+            </button>
+          )}
           <button
             id="remote-help-btn"
             onClick={onOpenHelp}

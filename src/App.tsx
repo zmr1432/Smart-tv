@@ -7,14 +7,13 @@ import { CategoryMenu } from './components/CategoryMenu';
 import { VirtualRemote } from './components/VirtualRemote';
 import { HelpModal } from './components/HelpModal';
 import { CornerLogo } from './components/CornerLogo';
+import { ActivationModal } from './components/ActivationModal';
+import { getActivationStatus } from './utils/activation';
 import { sfx } from './utils/audio';
 import { Smartphone, RotateCw } from 'lucide-react';
 import { isMobileDevice, isSmartTVDevice, requestMobileLandscapeFullscreen } from './utils/device';
 import { MobileGestureHUD } from './components/MobileGestureHUD';
 import { MobileHeaderBar } from './components/MobileHeaderBar';
-import { ActivationScreen } from './components/ActivationScreen';
-import { ApkModal } from './components/ApkModal';
-import { getActivationData, deactivateApp, ActivationData } from './utils/activation';
 
 export default function App() {
   // Current playing channel
@@ -95,14 +94,18 @@ export default function App() {
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [focusedIndex, setFocusedIndex] = useState<number>(0);
 
-  // Activation State (Required to unlock and open the TV app)
-  const [activationData, setActivationData] = useState<ActivationData | null>(() => getActivationData());
-
   // OSD and Remote UI State
   const [isOSDVisible, setIsOSDVisible] = useState<boolean>(true);
   const [isRemoteOpen, setIsRemoteOpen] = useState<boolean>(false);
   const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
-  const [isApkModalOpen, setIsApkModalOpen] = useState<boolean>(false);
+  const [isActivationOpen, setIsActivationOpen] = useState<boolean>(() => {
+    try {
+      const status = getActivationStatus();
+      return !status.isActivated;
+    } catch {
+      return false;
+    }
+  });
   const [numberInputBuffer, setNumberInputBuffer] = useState<string>('');
 
   // Mobile landscape & device state (TV version remains normal)
@@ -112,6 +115,32 @@ export default function App() {
     return window.innerHeight > window.innerWidth;
   });
   const [forceMobileLandscape, setForceMobileLandscape] = useState<boolean>(false);
+
+  // Live license / trial expiry watcher (checks every 1 second)
+  // When 3-minute trial or license finishes, automatically pops up the Activation Menu!
+  const prevActivatedRef = useRef<boolean>(false);
+  useEffect(() => {
+    try {
+      prevActivatedRef.current = getActivationStatus().isActivated;
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    const checkInterval = setInterval(() => {
+      try {
+        const curStatus = getActivationStatus();
+        if (prevActivatedRef.current && !curStatus.isActivated) {
+          // 3-Minute trial or subscription just expired!
+          sfx.playError();
+          setIsActivationOpen(true);
+          setIsMenuOpen(false);
+        }
+        prevActivatedRef.current = curStatus.isActivated;
+      } catch {}
+    }, 1000);
+
+    return () => clearInterval(checkInterval);
+  }, []);
 
   // Sync mobile screen size and orientation
   useEffect(() => {
@@ -443,14 +472,17 @@ export default function App() {
   // Global Remote Control / Keyboard Listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // If app is not activated, let ActivationScreen handle keyboard input
-      if (!activationData || !activationData.isActivated) {
-        return;
-      }
-
       // Prevent standard browser scrolling for arrow keys
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
         e.preventDefault();
+      }
+
+      // If Activation Modal is open
+      if (isActivationOpen) {
+        if (e.key === 'Escape') {
+          setIsActivationOpen(false);
+        }
+        return;
       }
 
       // If Help Modal is open
@@ -591,6 +623,12 @@ export default function App() {
         return;
       }
 
+      // Activation Modal: A
+      if (e.key === 'a' || e.key === 'A') {
+        setIsActivationOpen(prev => !prev);
+        return;
+      }
+
       // Help Modal: H or ?
       if (e.key === 'h' || e.key === 'H' || e.key === '?') {
         setIsHelpOpen(prev => !prev);
@@ -610,6 +648,7 @@ export default function App() {
   }, [
     isMenuOpen,
     isHelpOpen,
+    isActivationOpen,
     focusedIndex,
     openCategoryMenu,
     closeCategoryMenu,
@@ -643,27 +682,6 @@ export default function App() {
     transformOrigin: 'top left',
     zIndex: 50,
   } : {};
-
-  // If app is not yet activated, display the Activation Screen
-  if (!activationData || !activationData.isActivated) {
-    return (
-      <>
-        <ActivationScreen
-          onActivated={() => {
-            const fresh = getActivationData();
-            setActivationData(fresh);
-            setIsPlaying(true);
-            triggerOSD(6000);
-          }}
-          onOpenApkModal={() => setIsApkModalOpen(true)}
-        />
-        <ApkModal
-          isOpen={isApkModalOpen}
-          onClose={() => setIsApkModalOpen(false)}
-        />
-      </>
-    );
-  }
 
   return (
     <div
@@ -736,7 +754,6 @@ export default function App() {
         onToggleRemote={() => setIsRemoteOpen(prev => !prev)}
         isRemoteOpen={isRemoteOpen}
         onOpenHelp={() => setIsHelpOpen(true)}
-        onOpenApkModal={() => setIsApkModalOpen(true)}
       />
 
       {/* 2.2 Mobile-Only Small Menu Button on Right Side (Never visible in TV version) */}
@@ -767,6 +784,7 @@ export default function App() {
         onToggleFavorite={toggleFavorite}
         onClose={closeCategoryMenu}
         setFocusedIndex={setFocusedIndex}
+        onOpenActivation={() => setIsActivationOpen(true)}
       />
 
       {/* 4. Virtual Smart TV Remote Control Widget */}
@@ -836,25 +854,23 @@ export default function App() {
         onChannelStep={stepChannel}
         onNumberPress={handleDigitInput}
         onOpenHelp={() => setIsHelpOpen(true)}
+        onOpenActivation={() => setIsActivationOpen(true)}
       />
 
-      {/* 5. Shortcuts Help Modal & License Details */}
+      {/* 5. Shortcuts Help Modal */}
       <HelpModal
         isOpen={isHelpOpen}
         onClose={() => setIsHelpOpen(false)}
-        deviceId={activationData?.deviceId}
-        activationCode={activationData?.code}
-        onDeactivate={() => {
-          deactivateApp();
-          setActivationData(null);
-        }}
-        onOpenApkModal={() => setIsApkModalOpen(true)}
       />
 
-      {/* 5.5 APK & WebAPK Install / Download Modal */}
-      <ApkModal
-        isOpen={isApkModalOpen}
-        onClose={() => setIsApkModalOpen(false)}
+      {/* 5.5 App Activation Modal (6-Digit TV Code & Code Generator) */}
+      <ActivationModal
+        isOpen={isActivationOpen}
+        onClose={() => setIsActivationOpen(false)}
+        onActivated={() => {
+          setIsActivationOpen(false);
+          setIsPlaying(true);
+        }}
       />
 
       {/* 6. Mobile Portrait Landscape Helper (Only for mobile in portrait mode; TV version is untouched) */}

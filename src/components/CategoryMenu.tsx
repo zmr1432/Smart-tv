@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Channel, CategoryId } from '../types';
 import { CATEGORIES } from '../data/channels';
-import { Tv, Film, Sparkles, Radio, Music2, Languages, X, CornerDownLeft } from 'lucide-react';
+import { Tv, Film, Sparkles, Radio, Music2, Languages, X, CornerDownLeft, KeyRound, CheckCircle2 } from 'lucide-react';
 import { sfx } from '../utils/audio';
+import { getActivationStatus } from '../utils/activation';
 
 interface CategoryMenuProps {
   isOpen: boolean;
@@ -14,6 +15,7 @@ interface CategoryMenuProps {
   onToggleFavorite?: (channelId: string) => void;
   onClose: () => void;
   setFocusedIndex: (index: number) => void;
+  onOpenActivation?: () => void;
   // Optional backward-compatibility props
   activeCategoryId?: any;
   recentlyWatched?: Channel[];
@@ -32,11 +34,23 @@ export const CategoryMenu: React.FC<CategoryMenuProps> = ({
   onSelectChannel,
   onClose,
   setFocusedIndex,
+  onOpenActivation,
 }) => {
   const [selectedCategoryId, setSelectedCategoryId] = useState<CategoryId>('all');
   const [focusedColumn, setFocusedColumn] = useState<'categories' | 'channels'>('categories');
   const [catIndex, setCatIndex] = useState<number>(0);
   const [chanIndex, setChanIndex] = useState<number>(0);
+  const [activationStatus, setActivationStatus] = useState(() => getActivationStatus());
+
+  useEffect(() => {
+    if (isOpen) {
+      setActivationStatus(getActivationStatus());
+      const timer = setInterval(() => {
+        setActivationStatus(getActivationStatus());
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [isOpen]);
 
   const categoriesListRef = useRef<HTMLDivElement | null>(null);
   const channelListRef = useRef<HTMLDivElement | null>(null);
@@ -246,28 +260,71 @@ export const CategoryMenu: React.FC<CategoryMenuProps> = ({
         {/* Top Header */}
         <header className="px-4 py-3 bg-gradient-to-r from-[#08122c] via-[#091535] to-[#070e24] border-b border-[#1e3a8a]/50 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="flex items-center bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 border border-amber-400/50 px-2.5 py-1 rounded-lg shadow-md shadow-red-950/40">
-              <span className="text-xs font-black tracking-wider text-white flex items-center gap-1">
-                <span className="text-amber-300">JNN</span>
-                <span>TV</span>
-              </span>
-            </div>
+            <img 
+              src="https://i.ibb.co/GfcjDRD0/1000281966-removebg-preview.png"
+              alt="Logo"
+              className="h-8 max-w-[110px] object-contain filter drop-shadow"
+            />
             <span className="text-xs sm:text-sm font-bold text-neutral-200">
               Channel Guide
             </span>
           </div>
 
-          <button
-            id="close-jnn-guide-menu-btn"
-            onClick={() => {
-              sfx.playBack();
-              onClose();
-            }}
-            className="p-1.5 rounded-lg bg-white/10 hover:bg-rose-500/30 border border-white/15 text-neutral-300 hover:text-white transition-all cursor-pointer active:scale-95"
-            title="Close (Esc)"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {onOpenActivation && (
+              <button
+                type="button"
+                id="menu-activation-expiry-btn"
+                onClick={() => {
+                  sfx.playTick();
+                  onOpenActivation();
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-xl border text-xs font-bold transition-all cursor-pointer active:scale-95 ${
+                  activationStatus.isActivated
+                    ? 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/40 text-emerald-300 hover:text-white'
+                    : 'bg-amber-500/20 hover:bg-amber-500/30 border-amber-500/40 text-amber-300 hover:text-white'
+                }`}
+                title={
+                  activationStatus.isActivated
+                    ? `గడువు తేదీ: ${activationStatus.expiresAtDate} (${activationStatus.remainingDays} రోజుల వ్యాలిడిటీ)`
+                    : 'యాక్టివేషన్ అవసరం (Click to Activate)'
+                }
+              >
+                {activationStatus.isActivated ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="font-semibold tracking-wide">
+                      {activationStatus.remainingDays >= 1
+                        ? `${activationStatus.remainingDays} ${activationStatus.remainingDays === 1 ? 'Day' : 'Days'} Left`
+                        : `${activationStatus.remainingTimeFormatted} Left`}
+                    </span>
+                    <span className="text-[10px] text-emerald-400/80 font-normal">
+                      {activationStatus.remainingDays >= 1
+                        ? `(${activationStatus.remainingDays} రోజులు)`
+                        : `(${activationStatus.remainingTimeFormatted})`}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <KeyRound className="w-3.5 h-3.5 text-amber-400 animate-pulse shrink-0" />
+                    <span className="font-semibold">యాక్టివేట్ చేయండి</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            <button
+              id="close-jnn-guide-menu-btn"
+              onClick={() => {
+                sfx.playBack();
+                onClose();
+              }}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-rose-500/30 border border-white/15 text-neutral-300 hover:text-white transition-all cursor-pointer active:scale-95"
+              title="Close (Esc)"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </header>
 
         {/* Dual-Column Body: [Categories Column] | [Channels List Column] */}

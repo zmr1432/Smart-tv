@@ -1,23 +1,15 @@
 import React from 'react';
-import { X, Tv, Keyboard, Smartphone, ShieldCheck, KeyRound, RefreshCw, Download } from 'lucide-react';
+import { X, Tv, Smartphone } from 'lucide-react';
 import { sfx } from '../utils/audio';
 
 interface HelpModalProps {
   isOpen: boolean;
   onClose: () => void;
-  deviceId?: string;
-  activationCode?: string;
-  onDeactivate?: () => void;
-  onOpenApkModal?: () => void;
 }
 
 export const HelpModal: React.FC<HelpModalProps> = ({ 
   isOpen, 
   onClose,
-  deviceId,
-  activationCode,
-  onDeactivate,
-  onOpenApkModal,
 }) => {
   if (!isOpen) return null;
 
@@ -51,90 +43,106 @@ export const HelpModal: React.FC<HelpModalProps> = ({
               sfx.playBack();
               onClose();
             }}
-            className="p-2 rounded-xl hover:bg-white/10 text-neutral-400 hover:text-white transition-colors"
+            className="p-2 rounded-xl hover:bg-white/10 text-neutral-400 hover:text-white transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Shortcuts List */}
-        <div className="space-y-3 text-sm">
-          <div className="flex items-center justify-between p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20">
+        <div className="flex flex-col gap-3 text-sm max-h-[50vh] overflow-y-auto pr-1">
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-neutral-800/60 border border-white/5">
             <div className="flex items-center gap-2.5">
-              <span className="w-2 h-2 rounded-full bg-amber-400" />
+              <span className="w-2 h-2 rounded-full bg-cyan-400" />
               <div>
-                <div className="font-bold text-amber-300">OK Button / Enter Key</div>
-                <div className="text-xs text-neutral-400">Open Channel Menu & select channel</div>
+                <div className="font-semibold text-white">OK / Enter / Space</div>
+                <div className="text-xs text-neutral-400">Open Channel Guide or Select Channel</div>
               </div>
             </div>
-            <kbd className="px-2 py-1 rounded-lg bg-amber-400 text-neutral-950 font-black font-mono text-xs">
+            <kbd className="px-2 py-1 rounded-lg bg-neutral-700 text-neutral-200 font-mono text-xs">
               OK / Enter
             </kbd>
           </div>
 
-          <div className="flex items-center justify-between p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20">
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-neutral-800/60 border border-white/5">
+            <div className="flex items-center gap-2.5">
+              <span className="w-2 h-2 rounded-full bg-blue-400" />
+              <div>
+                <div className="font-semibold text-white">Arrow Up / Down (▲ / ▼)</div>
+                <div className="text-xs text-neutral-400">Channel Up / Down & Menu Navigation</div>
+              </div>
+            </div>
+            <div className="flex gap-1">
+              <kbd className="px-2 py-1 rounded-lg bg-neutral-700 text-neutral-200 font-mono text-xs">▲</kbd>
+              <kbd className="px-2 py-1 rounded-lg bg-neutral-700 text-neutral-200 font-mono text-xs">▼</kbd>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-neutral-800/60 border border-white/5">
+            <div className="flex items-center gap-2.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              <div>
+                <div className="font-semibold text-white">Arrow Left / Right (◄ / ►)</div>
+                <div className="text-xs text-neutral-400">Volume Down / Up or Column Switch</div>
+              </div>
+            </div>
+            <div className="flex gap-1">
+              <kbd className="px-2 py-1 rounded-lg bg-neutral-700 text-neutral-200 font-mono text-xs">◄</kbd>
+              <kbd className="px-2 py-1 rounded-lg bg-neutral-700 text-neutral-200 font-mono text-xs">►</kbd>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-neutral-800/60 border border-white/5">
+            <div className="flex items-center gap-2.5">
+              <span className="w-2 h-2 rounded-full bg-amber-400" />
+              <div>
+                <div className="font-semibold text-white">Number Keys (0-9)</div>
+                <div className="text-xs text-neutral-400">Directly tune to channel number (e.g. 101, 102)</div>
+              </div>
+            </div>
+            <kbd className="px-2 py-1 rounded-lg bg-neutral-700 text-neutral-200 font-mono text-xs">
+              0 - 9
+            </kbd>
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-neutral-800/60 border border-white/5">
             <div className="flex items-center gap-2.5">
               <span className="w-2 h-2 rounded-full bg-rose-400" />
               <div>
-                <div className="font-bold text-rose-300">B Key / FAV Button</div>
-                <div className="text-xs text-neutral-400">Add or remove active channel from Favorites</div>
+                <div className="font-semibold text-white">B Key / Yellow Button</div>
+                <div className="text-xs text-neutral-400">Toggle channel favorite status</div>
               </div>
             </div>
-            <kbd className="px-2 py-1 rounded-lg bg-rose-500/20 text-rose-300 font-bold font-mono text-xs border border-rose-500/30">
-              B / FAV
+            <kbd className="px-2 py-1 rounded-lg bg-neutral-700 text-neutral-200 font-mono text-xs">
+              B
             </kbd>
           </div>
 
           <div className="flex items-center justify-between p-3 rounded-2xl bg-neutral-800/60 border border-white/5">
             <div className="flex items-center gap-2.5">
-              <span className="w-2 h-2 rounded-full bg-neutral-400" />
+              <span className="w-2 h-2 rounded-full bg-amber-400" />
               <div>
-                <div className="font-semibold text-white">▲ / ▼ (Up / Down)</div>
-                <div className="text-xs text-neutral-400">Previous / Next channel or navigate list in guide</div>
+                <div className="font-semibold text-white">A Key / Activation</div>
+                <div className="text-xs text-neutral-400">Open Device Activation (యాక్టివేషన్)</div>
               </div>
             </div>
-            <kbd className="px-2 py-1 rounded-lg bg-neutral-700 text-neutral-200 font-mono text-xs">
-              Arrow Up / Down
+            <kbd className="px-2 py-1 rounded-lg bg-neutral-700 text-amber-300 font-mono text-xs font-bold">
+              A
             </kbd>
           </div>
 
           <div className="flex items-center justify-between p-3 rounded-2xl bg-neutral-800/60 border border-white/5">
             <div className="flex items-center gap-2.5">
-              <span className="w-2 h-2 rounded-full bg-neutral-400" />
+              <span className="w-2 h-2 rounded-full bg-purple-400" />
               <div>
-                <div className="font-semibold text-white">◄ / ► (Left / Right)</div>
-                <div className="text-xs text-neutral-400">Switch genres in menu or adjust volume</div>
+                <div className="font-semibold text-white">M Key / F Key</div>
+                <div className="text-xs text-neutral-400">M = Mute/Unmute, F = Fullscreen</div>
               </div>
             </div>
-            <kbd className="px-2 py-1 rounded-lg bg-neutral-700 text-neutral-200 font-mono text-xs">
-              Arrow Left / Right
-            </kbd>
-          </div>
-
-          <div className="flex items-center justify-between p-3 rounded-2xl bg-neutral-800/60 border border-white/5">
-            <div className="flex items-center gap-2.5">
-              <span className="w-2 h-2 rounded-full bg-neutral-400" />
-              <div>
-                <div className="font-semibold text-white">F Key</div>
-                <div className="text-xs text-neutral-400">Toggle Fullscreen mode</div>
-              </div>
+            <div className="flex gap-1">
+              <kbd className="px-2 py-1 rounded-lg bg-neutral-700 text-neutral-200 font-mono text-xs">M</kbd>
+              <kbd className="px-2 py-1 rounded-lg bg-neutral-700 text-neutral-200 font-mono text-xs">F</kbd>
             </div>
-            <kbd className="px-2 py-1 rounded-lg bg-neutral-700 text-neutral-200 font-mono text-xs">
-              F
-            </kbd>
-          </div>
-
-          <div className="flex items-center justify-between p-3 rounded-2xl bg-neutral-800/60 border border-white/5">
-            <div className="flex items-center gap-2.5">
-              <span className="w-2 h-2 rounded-full bg-neutral-400" />
-              <div>
-                <div className="font-semibold text-white">M Key</div>
-                <div className="text-xs text-neutral-400">Mute / Unmute audio</div>
-              </div>
-            </div>
-            <kbd className="px-2 py-1 rounded-lg bg-neutral-700 text-neutral-200 font-mono text-xs">
-              M
-            </kbd>
           </div>
 
           <div className="flex items-center justify-between p-3 rounded-2xl bg-neutral-800/60 border border-white/5">
@@ -164,44 +172,6 @@ export const HelpModal: React.FC<HelpModalProps> = ({
           </div>
         </div>
 
-        {/* Activation Status Card */}
-        {deviceId && (
-          <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-amber-400 font-bold text-xs">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <span>యాక్టివేషన్ స్థితి: యాక్టివేట్ చేయబడింది (Active)</span>
-              </div>
-              {onDeactivate && (
-                <button
-                  id="reset-activation-btn"
-                  onClick={() => {
-                    sfx.playBack();
-                    onDeactivate();
-                    onClose();
-                  }}
-                  className="flex items-center gap-1 text-[11px] text-rose-400 hover:text-rose-300 font-semibold px-2 py-0.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 transition-colors cursor-pointer"
-                  title="Reset Activation to test activation screen"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  <span>రీసెట్ / డీయాక్టివేట్</span>
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between text-xs text-neutral-300">
-              <span className="text-neutral-400">డివైస్ ID:</span>
-              <span className="font-mono font-bold text-amber-300">{deviceId}</span>
-            </div>
-            {activationCode && (
-              <div className="flex items-center justify-between text-xs text-neutral-300">
-                <span className="text-neutral-400">యాక్టివేషన్ కోడ్:</span>
-                <span className="font-mono font-bold text-emerald-400">{activationCode}</span>
-              </div>
-            )}
-          </div>
-        )}
-
         {/* Footer Note */}
         <div className="flex items-center gap-3 p-3 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-200">
           <Smartphone className="w-5 h-5 shrink-0 text-blue-400" />
@@ -209,21 +179,6 @@ export const HelpModal: React.FC<HelpModalProps> = ({
             You can operate the player using the on-screen virtual remote, computer keyboard shortcuts, or your Smart TV remote.
           </span>
         </div>
-
-        {/* APK / App Install Section */}
-        {onOpenApkModal && (
-          <button
-            id="help-open-apk-modal-btn"
-            onClick={() => {
-              sfx.playOk();
-              onOpenApkModal();
-            }}
-            className="w-full py-2.5 px-4 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-xs font-bold text-amber-300 flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98"
-          >
-            <Download className="w-3.5 h-3.5 text-amber-400" />
-            <span>APK ఫైల్ డౌన్‌లోడ్ & ఇన్‌స్టాలేషన్ ఆప్షన్స్ (APK & WebAPK)</span>
-          </button>
-        )}
 
         <button
           id="ack-help-btn"

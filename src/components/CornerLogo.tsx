@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Tv, Upload, Image as ImageIcon, Sparkles, X, RotateCcw, Check, Heart, ArrowDownRight, ArrowUpRight } from 'lucide-react';
 
+export const DEFAULT_CORNER_LOGO = 'https://i.ibb.co/GfcjDRD0/1000281966-removebg-preview.png';
+
 interface CornerLogoProps {
   channelName?: string;
   isMenuOpen?: boolean;
@@ -9,11 +11,25 @@ interface CornerLogoProps {
 export const CornerLogo: React.FC<CornerLogoProps> = ({ isMenuOpen }) => {
   const [logoImage, setLogoImage] = useState<string>(() => {
     try {
-      return localStorage.getItem('smart_tv_corner_logo_img') || '';
+      const saved = localStorage.getItem('smart_tv_corner_logo_img');
+      // If user uploaded a custom base64 image, keep it; otherwise default to user's new logo
+      if (saved && saved.startsWith('data:image/')) {
+        return saved;
+      }
+      return DEFAULT_CORNER_LOGO;
     } catch {
-      return '';
+      return DEFAULT_CORNER_LOGO;
     }
   });
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('smart_tv_corner_logo_img');
+      if (!saved || !saved.startsWith('data:image/')) {
+        localStorage.setItem('smart_tv_corner_logo_img', DEFAULT_CORNER_LOGO);
+      }
+    } catch {}
+  }, []);
 
   const [logoText, setLogoText] = useState<string>(() => {
     try {
@@ -58,10 +74,12 @@ export const CornerLogo: React.FC<CornerLogoProps> = ({ isMenuOpen }) => {
 
   const [size, setSize] = useState<'sm' | 'md' | 'lg'>(() => {
     try {
-      const saved = localStorage.getItem('smart_tv_corner_logo_size');
-      return (saved as 'sm' | 'md' | 'lg') || 'md';
+      const saved = localStorage.getItem('smart_tv_corner_logo_size_v2');
+      if (saved === 'lg') return 'lg';
+      if (saved === 'md') return 'md';
+      return 'sm';
     } catch {
-      return 'md';
+      return 'sm';
     }
   });
 
@@ -103,29 +121,32 @@ export const CornerLogo: React.FC<CornerLogoProps> = ({ isMenuOpen }) => {
   };
 
   const handleReset = () => {
-    setLogoImage('');
+    setLogoImage(DEFAULT_CORNER_LOGO);
     setLogoText('JNN TV');
     setLogoSub('HD');
     setPosition('bottom-right');
     setOpacity(90);
-    setSize('md');
+    setSize('sm');
     try {
-      localStorage.removeItem('smart_tv_corner_logo_img');
+      localStorage.setItem('smart_tv_corner_logo_img', DEFAULT_CORNER_LOGO);
       localStorage.setItem('smart_tv_corner_logo_text', 'JNN TV');
       localStorage.setItem('smart_tv_corner_logo_sub', 'HD');
       localStorage.removeItem('smart_tv_corner_logo_pos');
       localStorage.removeItem('smart_tv_corner_logo_opacity');
-      localStorage.removeItem('smart_tv_corner_logo_size');
+      localStorage.setItem('smart_tv_corner_logo_size', 'sm');
+      localStorage.setItem('smart_tv_corner_logo_size_v2', 'sm');
     } catch {}
   };
 
   const handleSaveSettings = () => {
     try {
+      localStorage.setItem('smart_tv_corner_logo_img', logoImage);
       localStorage.setItem('smart_tv_corner_logo_text', logoText);
       localStorage.setItem('smart_tv_corner_logo_sub', logoSub);
       localStorage.setItem('smart_tv_corner_logo_pos', position);
       localStorage.setItem('smart_tv_corner_logo_opacity', opacity.toString());
       localStorage.setItem('smart_tv_corner_logo_size', size);
+      localStorage.setItem('smart_tv_corner_logo_size_v2', size);
       setSaveSuccess(true);
       setTimeout(() => {
         setSaveSuccess(false);
@@ -136,35 +157,35 @@ export const CornerLogo: React.FC<CornerLogoProps> = ({ isMenuOpen }) => {
 
   const isLoveTheme = logoText.toLowerCase().includes('love');
 
-  // Dimensions based on size preset
+  // Dimensions based on size preset (Watermark proportioned)
   const sizeClasses = {
     sm: {
-      container: 'px-2.5 py-1.5 gap-2',
-      img: 'max-h-7 max-w-[80px]',
-      icon: 'w-4 h-4',
-      title: 'text-xs',
-      sub: 'text-[9px]',
+      container: 'px-2 py-1 gap-1.5',
+      img: 'max-h-6 sm:max-h-7 max-w-[70px] sm:max-w-[80px]',
+      icon: 'w-3.5 h-3.5',
+      title: 'text-[11px] font-bold',
+      sub: 'text-[8px]',
     },
     md: {
+      container: 'px-2.5 py-1.5 gap-2',
+      img: 'max-h-8 sm:max-h-9 max-w-[95px] sm:max-w-[105px]',
+      icon: 'w-4 h-4',
+      title: 'text-xs font-black',
+      sub: 'text-[9px] font-bold',
+    },
+    lg: {
       container: 'px-3.5 py-2 gap-2.5',
-      img: 'max-h-9 max-w-[110px]',
+      img: 'max-h-11 sm:max-h-12 max-w-[130px] sm:max-w-[145px]',
       icon: 'w-5 h-5',
       title: 'text-sm font-black',
       sub: 'text-[10px] font-bold',
-    },
-    lg: {
-      container: 'px-4 py-2.5 gap-3',
-      img: 'max-h-12 max-w-[140px]',
-      icon: 'w-6 h-6',
-      title: 'text-base font-black',
-      sub: 'text-xs font-bold',
     },
   }[size];
 
   // Position classes
   const positionClasses = position === 'bottom-right'
-    ? 'bottom-5 right-5 sm:bottom-6 sm:right-6'
-    : 'top-4 right-4 sm:top-6 sm:right-6';
+    ? 'bottom-4 right-4 sm:bottom-5 sm:right-5'
+    : 'top-4 right-4 sm:top-5 sm:right-5';
 
   return (
     <>
@@ -179,15 +200,15 @@ export const CornerLogo: React.FC<CornerLogoProps> = ({ isMenuOpen }) => {
         <div
           onClick={() => setIsModalOpen(true)}
           title="Corner Logo (Click to change logo or position)"
-          className={`relative flex items-center ${sizeClasses.container} rounded-2xl bg-neutral-950/80 hover:bg-neutral-900/95 backdrop-blur-md border border-white/15 hover:border-amber-400/40 shadow-2xl transition-transform hover:scale-105 active:scale-95 cursor-pointer`}
+          className={`relative flex items-center ${sizeClasses.container} rounded-xl bg-neutral-950/70 hover:bg-neutral-900/90 backdrop-blur-sm border border-white/10 hover:border-amber-400/40 shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer`}
         >
           {logoImage ? (
-            /* User's custom uploaded logo image */
-            <div className="flex items-center gap-2">
+            /* User's official logo image */
+            <div className="flex items-center justify-center">
               <img
                 src={logoImage}
-                alt="My Custom Logo"
-                className={`${sizeClasses.img} object-contain filter drop-shadow-md rounded`}
+                alt="TV Logo"
+                className={`${sizeClasses.img} object-contain filter drop-shadow-lg`}
                 referrerPolicy="no-referrer"
               />
             </div>
@@ -326,6 +347,17 @@ export const CornerLogo: React.FC<CornerLogoProps> = ({ isMenuOpen }) => {
             {/* Quick Presets */}
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[11px] font-semibold text-neutral-400">Quick Presets:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setLogoImage(DEFAULT_CORNER_LOGO);
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition-colors cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Default Logo</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => {
