@@ -1,4 +1,16 @@
-export type CategoryId = 'all' | 'telugu' | 'hindi' | 'kannada' | 'entertainment' | 'kids' | 'news' | 'music';
+export type CategoryId = 
+  | 'all' 
+  | 'telugu' 
+  | 'entertainment' 
+  | 'movies' 
+  | 'news' 
+  | 'music' 
+  | 'religious' 
+  | 'kids' 
+  | 'sports' 
+  | 'hindi' 
+  | 'kannada'
+  | (string & {});
 
 export interface Category {
   id: CategoryId;

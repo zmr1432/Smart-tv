@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Channel, CategoryId } from '../types';
 import { CATEGORIES } from '../data/channels';
-import { Tv, Film, Sparkles, Radio, Music2, Languages, X, CornerDownLeft, KeyRound, CheckCircle2 } from 'lucide-react';
+import { Tv, Film, Sparkles, Radio, Music2, Languages, X, CornerDownLeft, KeyRound, CheckCircle2, LayoutGrid, Grid3X3, RefreshCw, Link2, Globe } from 'lucide-react';
 import { sfx } from '../utils/audio';
 import { getActivationStatus } from '../utils/activation';
+import { isMobileDevice } from '../utils/device';
+import { getAppLanguage, onLanguageChange, t, AppLanguage } from '../utils/i18n';
 
 interface CategoryMenuProps {
   isOpen: boolean;
@@ -16,6 +18,11 @@ interface CategoryMenuProps {
   onClose: () => void;
   setFocusedIndex: (index: number) => void;
   onOpenActivation?: () => void;
+  onOpenEPG?: () => void;
+  onOpenTVMode?: () => void;
+  onOpenLanguage?: () => void;
+  onRefreshChannels?: () => void;
+  isSyncing?: boolean;
   // Optional backward-compatibility props
   activeCategoryId?: any;
   recentlyWatched?: Channel[];
@@ -35,7 +42,20 @@ export const CategoryMenu: React.FC<CategoryMenuProps> = ({
   onClose,
   setFocusedIndex,
   onOpenActivation,
+  onOpenEPG,
+  onOpenTVMode,
+  onOpenLanguage,
+  onRefreshChannels,
+  isSyncing = false,
 }) => {
+  const [currentLang, setCurrentLang] = useState<AppLanguage>(() => getAppLanguage());
+
+  useEffect(() => {
+    return onLanguageChange((lang) => {
+      setCurrentLang(lang);
+    });
+  }, []);
+
   const [selectedCategoryId, setSelectedCategoryId] = useState<CategoryId>('all');
   const [focusedColumn, setFocusedColumn] = useState<'categories' | 'channels'>('categories');
   const [catIndex, setCatIndex] = useState<number>(0);
@@ -228,6 +248,12 @@ export const CategoryMenu: React.FC<CategoryMenuProps> = ({
         return <Radio className={`${iconClass} ${!isSelected ? 'text-yellow-400' : ''}`} />;
       case 'entertainment':
         return <Film className={`${iconClass} ${!isSelected ? 'text-pink-400' : ''}`} />;
+      case 'movies':
+        return <Film className={`${iconClass} ${!isSelected ? 'text-amber-500' : ''}`} />;
+      case 'religious':
+        return <Sparkles className={`${iconClass} ${!isSelected ? 'text-yellow-400' : ''}`} />;
+      case 'sports':
+        return <Tv className={`${iconClass} ${!isSelected ? 'text-blue-400' : ''}`} />;
       case 'kids':
         return <Sparkles className={`${iconClass} ${!isSelected ? 'text-amber-300' : ''}`} />;
       case 'news':
@@ -286,8 +312,8 @@ export const CategoryMenu: React.FC<CategoryMenuProps> = ({
                 }`}
                 title={
                   activationStatus.isActivated
-                    ? `గడువు తేదీ: ${activationStatus.expiresAtDate} (${activationStatus.remainingDays} రోజుల వ్యాలిడిటీ)`
-                    : 'యాక్టివేషన్ అవసరం (Click to Activate)'
+                    ? `Expires on: ${activationStatus.expiresAtDate} (${activationStatus.remainingDays} Days Validity)`
+                    : 'Activation Required (Click to Activate)'
                 }
               >
                 {activationStatus.isActivated ? (
@@ -295,19 +321,17 @@ export const CategoryMenu: React.FC<CategoryMenuProps> = ({
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                     <span className="font-semibold tracking-wide">
                       {activationStatus.remainingDays >= 1
-                        ? `${activationStatus.remainingDays} ${activationStatus.remainingDays === 1 ? 'Day' : 'Days'} Left`
-                        : `${activationStatus.remainingTimeFormatted} Left`}
+                        ? `${activationStatus.remainingDays} ${t('daysLabel', currentLang)}`
+                        : activationStatus.remainingTimeFormatted}
                     </span>
                     <span className="text-[10px] text-emerald-400/80 font-normal">
-                      {activationStatus.remainingDays >= 1
-                        ? `(${activationStatus.remainingDays} రోజులు)`
-                        : `(${activationStatus.remainingTimeFormatted})`}
+                      ({t('statusActive', currentLang)})
                     </span>
                   </>
                 ) : (
                   <>
                     <KeyRound className="w-3.5 h-3.5 text-amber-400 animate-pulse shrink-0" />
-                    <span className="font-semibold">యాక్టివేట్ చేయండి</span>
+                    <span className="font-semibold">{t('activateNow', currentLang)}</span>
                   </>
                 )}
               </button>
@@ -378,7 +402,7 @@ export const CategoryMenu: React.FC<CategoryMenuProps> = ({
                     <div className="flex items-center gap-2 min-w-0">
                       {renderCategoryIcon(cat.id, isSelected)}
                       <span className={`truncate text-xs sm:text-[13px] leading-tight ${isSelected ? 'font-bold text-white' : 'font-semibold text-neutral-200'}`}>
-                        {cat.nameEnglish}
+                        {t('cat_' + cat.id, currentLang)}
                       </span>
                     </div>
 
@@ -407,7 +431,7 @@ export const CategoryMenu: React.FC<CategoryMenuProps> = ({
             <div className="px-3 py-2 bg-[#08122c] border-b border-[#162758]/50 flex items-center justify-between text-[11px] text-neutral-300 shrink-0">
               <span className="font-bold flex items-center gap-1.5 truncate">
                 <span className="text-white truncate">
-                  {CATEGORIES.find(c => c.id === selectedCategoryId)?.nameEnglish || 'Channels'}
+                  {t('cat_' + selectedCategoryId, currentLang)}
                 </span>
                 <span className="text-cyan-400 font-mono">({filteredChannels.length})</span>
               </span>

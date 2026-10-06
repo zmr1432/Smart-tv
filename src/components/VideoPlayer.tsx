@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Channel } from '../types';
-import { AlertCircle, Play, VolumeX } from 'lucide-react';
+import { AlertCircle, Play } from 'lucide-react';
 import { requestMobileLandscapeFullscreen, isMobileDevice } from '../utils/device';
 import Hls from 'hls.js';
+import { detectStreamProtocol, getOptimizedHlsConfig, loadShakaPlayer } from '../utils/codecEngine';
 
 // Android TV / Native WebView Google Media3 ExoPlayer Bridge Interface
 declare global {
@@ -31,14 +32,21 @@ interface VideoPlayerProps {
 }
 
 /**
- * Google Media3 ExoPlayer Engine for HLS (.m3u8) Live Streaming
+ * Universal Multi-Codec Video Player Engine
  * 
- * Implements ExoPlayer's live streaming architecture:
- * - Direct Live HLS streaming with zero artificial buffering delays
- * - Hardware accelerated playback pipeline (MediaSource / HTML5 Video)
- * - Native Android TV Media3 Bridge synchronization (if hosted in Android TV WebView)
- * - Automatic codec swap and media error recovery based on ExoPlayer LoadErrorHandlingPolicy
- * - Direct failover to fallback URL on fatal broadcast disruption
+ * Features:
+ * 1. Comprehensive Protocol & Codec Support:
+ *    - HLS (.m3u8) Live & VOD with H.264/AVC, H.265/HEVC, AAC, MP3, AC-3 / E-AC-3 audio demuxing
+ *    - MPEG-DASH (.mpd) via Google Shaka Player Engine
+ *    - Direct MP4 / WebM / MKV / OGG media streaming
+ *    - Native Apple HLS hardware pipeline on Safari & iOS
+ *    - Hardware Android TV Media3 ExoPlayer Bridge
+ * 
+ * 2. Unmuted Direct Audio Architecture:
+ *    - Audio is NEVER forced to mute on load or stream restart
+ *    - Pure unmuted playback with full volume synchronization
+ *    - Instant gesture-based audio unlock if browser policy requires initial interaction
+ *    - Codec swap on audio track errors (AAC-LC <-> HE-AAC <-> MP3)
  */
 export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
   channel,
@@ -50,16 +58,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const shakaRef = useRef<any>(null);
   const [hasError, setHasError] = useState<boolean>(false);
   const [usingFallback, setUsingFallback] = useState<boolean>(false);
   const isPlayingRef = useRef<boolean>(isPlaying);
   const retryCountRef = useRef<number>(0);
+  const stallTimerRef = useRef<any>(null);
 
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
 
-  // ExoPlayer Error Recovery Policy
+  // Fatal Stream Error & Fallback Recovery Policy
   const handleFatalStreamError = useCallback(() => {
     if (!usingFallback && channel.fallbackUrl && videoRef.current) {
       setUsingFallback(true);
@@ -75,25 +85,83 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
     }
   }, [channel.fallbackUrl, usingFallback]);
 
-  // Google Media3 ExoPlayer Engine Initialization & HLS Live Pipeline
+  // Helper to safely play video with unmuted audio
+  const safePlay = useCallback((video: HTMLVideoElement) => {
+    if (!isPlayingRef.current) return;
+    
+    // Ensure sound is active and unmuted
+    video.muted = isMuted;
+    video.volume = isMuted ? 0 : Math.min(1, Math.max(0, volume / 100));
+
+    const playPromise = video.play();
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => {
+          onPlayStateChange(true);
+        })
+        .catch(() => {
+          // If browser blocked unmuted autoplay pending initial user interaction,
+          // listen for the very first interaction and immediately start unmuted audio!
+          const unlockAudio = () => {
+            if (videoRef.current) {
+              videoRef.current.muted = isMuted;
+              videoRef.current.volume = isMuted ? 0 : Math.min(1, Math.max(0, volume / 100));
+              videoRef.current.play().then(() => {
+                onPlayStateChange(true);
+              }).catch(() => {});
+            }
+            window.removeEventListener('pointerdown', unlockAudio);
+            window.removeEventListener('keydown', unlockAudio);
+            window.removeEventListener('touchstart', unlockAudio);
+          };
+
+          window.addEventListener('pointerdown', unlockAudio, { once: true });
+          window.addEventListener('keydown', unlockAudio, { once: true });
+          window.addEventListener('touchstart', unlockAudio, { once: true });
+          
+          onPlayStateChange(false);
+        });
+    }
+  }, [isMuted, volume, onPlayStateChange]);
+
+  // Universal Video Codec & Streaming Pipeline Initialization
   useEffect(() => {
     setHasError(false);
     setUsingFallback(false);
     retryCountRef.current = 0;
 
-    // Destroy existing player instance cleanly
+    // Destroy any existing player instances cleanly
     if (hlsRef.current) {
       hlsRef.current.destroy();
       hlsRef.current = null;
+    }
+    if (shakaRef.current) {
+      shakaRef.current.destroy();
+      shakaRef.current = null;
+    }
+    if (stallTimerRef.current) {
+      clearTimeout(stallTimerRef.current);
+      stallTimerRef.current = null;
     }
 
     const video = videoRef.current;
     if (!video) return;
 
-    const streamUrl = channel.streamUrl;
-    const isHls = streamUrl.includes('.m3u8') || (!streamUrl.endsWith('.mp4') && streamUrl.startsWith('http'));
+    // Ensure audio parameters are set cleanly before loading
+    video.muted = isMuted;
+    video.volume = isMuted ? 0 : Math.min(1, Math.max(0, volume / 100));
 
-    // 1. Android TV Native Media3 ExoPlayer Bridge (if running inside an Android TV APK wrapper)
+    const rawStreamUrl = channel.streamUrl;
+    // When served over HTTPS, avoid browser mixed-content blockage by proxying insecure HTTP streams
+    const streamUrl = (typeof window !== 'undefined' && window.location.protocol === 'https:' && rawStreamUrl.startsWith('http://'))
+      ? `/api/proxy-stream?url=${encodeURIComponent(rawStreamUrl)}`
+      : rawStreamUrl;
+
+    const protocol = detectStreamProtocol(streamUrl, video);
+
+    let handleWaiting: (() => void) | null = null;
+
+    // 1. Android TV Native Media3 ExoPlayer Bridge (if inside native APK wrapper)
     if (window.AndroidMedia3?.playStream) {
       try {
         window.AndroidMedia3.playStream(streamUrl, true);
@@ -109,73 +177,88 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
       }
     }
 
-    // 2. Native HLS Engine (Safari / iOS / Android WebViews with native Media3 hardware HLS)
-    if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = streamUrl;
-      if (isPlayingRef.current) {
-        const p = video.play();
-        if (p !== undefined) {
-          p.catch(() => {
-            // Autoplay policy fallback: start muted if unmuted playback blocked by browser
-            video.muted = true;
-            video.play().catch(() => onPlayStateChange(false));
+    // 2. MPEG-DASH (.mpd) Engine via Shaka Player
+    if (protocol === 'dash') {
+      loadShakaPlayer(video).then(player => {
+        if (player) {
+          shakaRef.current = player;
+          player.load(streamUrl).then(() => {
+            safePlay(video);
+          }).catch((err: any) => {
+            console.error('Shaka DASH load error:', err);
+            handleFatalStreamError();
           });
+        } else {
+          // Fallback to native video tag
+          video.src = streamUrl;
+          safePlay(video);
         }
-      }
-    } 
-    // 3. Google Media3 ExoPlayer HLS Web Engine (Chrome, Edge, Firefox, Android TV Browser)
-    else if (isHls && Hls.isSupported()) {
-      const hls = new Hls({
-        enableWorker: true,
-        autoStartLoad: true,
-        // ExoPlayer-aligned Live parameters: Direct play, no buffer throttling
-        lowLatencyMode: false,
-        backBufferLength: 10,
-        maxBufferLength: 20,
-        maxMaxBufferLength: 40,
-        enableSoftwareAES: true,
-        startLevel: -1, // Adaptive Bitrate start (ABR)
       });
+    }
+    // 3. Native Apple HLS (Safari, iOS, macOS)
+    else if (protocol === 'native-hls') {
+      video.src = streamUrl;
+      safePlay(video);
+    }
+    // 4. HLS.js Universal Engine with Full Audio/Video Codec Support
+    else if (protocol === 'hls' && Hls.isSupported()) {
+      const hls = new Hls(getOptimizedHlsConfig());
       hlsRef.current = hls;
 
       hls.loadSource(streamUrl);
       hls.attachMedia(video);
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        if (isPlayingRef.current) {
-          const p = video.play();
-          if (p !== undefined) {
-            p.catch(() => {
-              video.muted = true;
-              video.play().catch(() => onPlayStateChange(false));
-            });
-          }
-        }
+        safePlay(video);
       });
 
-      // ExoPlayer Error Recovery Mechanism
+      // Buffer Stall & Live Drift Auto-Recovery on video element
+      handleWaiting = () => {
+        if (video && video.buffered.length > 0) {
+          const liveEdge = video.buffered.end(video.buffered.length - 1);
+          if (liveEdge - video.currentTime > 6) {
+            video.currentTime = Math.max(0, liveEdge - 1.5);
+          }
+        }
+      };
+      video.addEventListener('waiting', handleWaiting);
+
+      // Advanced Multi-Codec Error Recovery Policy
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              // ExoPlayer DefaultLoadErrorHandlingPolicy: retry load
-              if (retryCountRef.current < 3) {
+              // Progressive retry with exponential backoff
+              if (retryCountRef.current < 4) {
                 retryCountRef.current += 1;
-                hls.startLoad();
+                setTimeout(() => {
+                  if (hlsRef.current) hlsRef.current.startLoad();
+                }, 1000 * retryCountRef.current);
               } else {
                 hls.destroy();
                 hlsRef.current = null;
                 handleFatalStreamError();
               }
               break;
+
             case Hls.ErrorTypes.MEDIA_ERROR:
-              // ExoPlayer codec/pipeline recovery
+              // Codec and demuxer auto-recovery
               if (retryCountRef.current === 0) {
                 retryCountRef.current += 1;
                 hls.recoverMediaError();
               } else if (retryCountRef.current === 1) {
+                // Audio Codec Swap: Switch between AAC-LC / HE-AAC / MP3 demuxers
                 retryCountRef.current += 1;
-                hls.swapAudioCodec();
+                try {
+                  hls.swapAudioCodec();
+                } catch {}
+                hls.recoverMediaError();
+              } else if (retryCountRef.current === 2) {
+                // Buffer hole jump
+                retryCountRef.current += 1;
+                if (video && !isNaN(video.currentTime)) {
+                  video.currentTime += 0.5;
+                }
                 hls.recoverMediaError();
               } else {
                 hls.destroy();
@@ -183,6 +266,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
                 handleFatalStreamError();
               }
               break;
+
             default:
               hls.destroy();
               hlsRef.current = null;
@@ -191,28 +275,30 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
           }
         }
       });
-    } 
-    // 4. Standard Direct MP4 / Media Playback
+    }
+    // 5. Direct MP4 / WebM / Media Stream
     else {
       video.src = streamUrl;
-      if (isPlayingRef.current) {
-        const p = video.play();
-        if (p !== undefined) {
-          p.catch(() => {
-            video.muted = true;
-            video.play().catch(() => onPlayStateChange(false));
-          });
-        }
-      }
+      safePlay(video);
     }
 
     return () => {
+      if (handleWaiting) {
+        video.removeEventListener('waiting', handleWaiting);
+      }
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
+      if (shakaRef.current) {
+        shakaRef.current.destroy();
+        shakaRef.current = null;
+      }
+      if (stallTimerRef.current) {
+        clearTimeout(stallTimerRef.current);
+      }
     };
-  }, [channel.id, channel.streamUrl, handleFatalStreamError, onPlayStateChange]);
+  }, [channel.id, channel.streamUrl, handleFatalStreamError, safePlay, isMuted, volume]);
 
   // Synchronize Volume and Mute without interrupting live stream
   useEffect(() => {
@@ -236,6 +322,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
     if (!v) return;
 
     if (isPlaying) {
+      if (hlsRef.current) {
+        try {
+          hlsRef.current.startLoad();
+        } catch {}
+      }
+      v.muted = isMuted;
+      v.volume = isMuted ? 0 : Math.min(1, Math.max(0, volume / 100));
       if (v.paused) {
         const p = v.play();
         if (p !== undefined) {
@@ -247,14 +340,47 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
       if (!v.paused) {
         v.pause();
       }
+      if (hlsRef.current) {
+        try {
+          hlsRef.current.stopLoad();
+        } catch {}
+      }
       window.AndroidMedia3?.pauseStream?.();
     }
-  }, [isPlaying, channel.streamUrl, onPlayStateChange]);
+  }, [isPlaying, channel.streamUrl, onPlayStateChange, isMuted, volume]);
+
+  // Block native browser context menu (long-press popups like Picture-in-Picture, copy frame, open in chrome)
+  useEffect(() => {
+    const blockMenu = (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    };
+    const el = videoRef.current;
+    if (el) {
+      el.addEventListener('contextmenu', blockMenu, { capture: true });
+    }
+    return () => {
+      if (el) {
+        el.removeEventListener('contextmenu', blockMenu, { capture: true });
+      }
+    };
+  }, []);
 
   return (
     <div 
       id="tv-video-player-container"
       className="relative w-full h-full bg-neutral-950 flex items-center justify-center overflow-hidden select-none cursor-pointer"
+      style={{
+        WebkitTouchCallout: 'none',
+        WebkitUserSelect: 'none',
+        userSelect: 'none',
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }}
       onClick={() => {
         if (isMobileDevice()) {
           requestMobileLandscapeFullscreen(
@@ -265,17 +391,31 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
         onVideoClick?.();
       }}
     >
-      {/* Live ExoPlayer Engine Video Element */}
+      {/* Live Universal Multi-Codec Video Element */}
       <video
         ref={videoRef}
         id="main-tv-video-element"
-        data-engine="google-media3-exoplayer"
-        className="w-full h-full object-fill bg-black"
-        style={{ objectFit: 'fill', width: '100%', height: '100%' }}
+        data-engine="google-media3-universal-codec"
+        className="w-full h-full object-fill bg-black pointer-events-none select-none"
+        style={{
+          objectFit: 'fill',
+          width: '100%',
+          height: '100%',
+          WebkitTouchCallout: 'none',
+          WebkitUserSelect: 'none',
+          userSelect: 'none',
+          pointerEvents: 'none',
+        }}
         autoPlay
         playsInline
         preload="auto"
-        crossOrigin="anonymous"
+        disablePictureInPicture
+        controlsList="nodownload nofullscreen noremoteplayback noplaybackrate"
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }}
         onPlaying={() => onPlayStateChange(true)}
         onError={handleFatalStreamError}
       />
@@ -292,17 +432,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
         </div>
       )}
 
-      {/* Audio Muted Tag */}
-      {isMuted && (
-        <div 
-          id="video-muted-pill"
-          className="absolute top-6 left-6 z-20 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-600/90 text-white text-xs font-semibold backdrop-blur-md shadow-lg pointer-events-none"
-        >
-          <VolumeX className="w-4 h-4" />
-          <span>Audio Muted</span>
-        </div>
-      )}
-
       {/* Fatal Broadcast Error Screen */}
       {hasError && (
         <div 
@@ -314,7 +443,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
           </div>
           <h3 className="text-xl font-bold text-white mb-1">{channel.name}</h3>
           <p className="text-neutral-400 text-sm max-w-md mb-5">
-            లైవ్ స్ట్రీమ్ సిగ్నల్ తాత్కాలికంగా ఆగిపోయింది. దయచేసి రీట్రై చేయండి లేదా వేరే ఛానల్‌ను ఎంచుకోండి.
+            Live stream signal is temporarily unavailable. Please retry or choose another channel.
           </p>
           <button
             id="retry-stream-btn"
@@ -325,12 +454,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
               if (videoRef.current) {
                 videoRef.current.src = channel.streamUrl;
                 videoRef.current.load();
-                videoRef.current.play();
+                videoRef.current.play().catch(() => {});
               }
             }}
             className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-semibold text-sm transition-colors shadow-lg active:scale-95 cursor-pointer"
           >
-            రీట్రై చేయండి (Retry Stream)
+            Retry Stream
           </button>
         </div>
       )}

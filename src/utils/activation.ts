@@ -176,7 +176,7 @@ export function validateActivationCode(enteredCode: string, deviceCode: string):
   const cleanDevice = deviceCode.trim().replace(/\D/g, '');
 
   if (!cleanCode) {
-    return { valid: false, days: 0, planName: '', error: 'దయచేసి యాక్టివేషన్ కోడ్ ఎంటర్ చేయండి' };
+    return { valid: false, days: 0, planName: '', error: 'Please enter an activation code' };
   }
 
   // 1. Fixed 3-Minute Activation Code '1432' (Only 1 time use!)
@@ -186,49 +186,49 @@ export function validateActivationCode(enteredCode: string, deviceCode: string):
         valid: false, 
         days: 0, 
         planName: '', 
-        error: '3 నిమిషాల ట్రయల్ కోడ్ 1432 ఇప్పటికే ఒకసారి ఉపయోగించబడింది (1 సారి మాత్రమే అనుమతించబడుతుంది).' 
+        error: 'The 3-minute trial code 1432 has already been used on this device (allowed only once).' 
       };
     }
     return { 
       valid: true, 
       days: 3 / 1440, 
       durationMs: 3 * 60 * 1000, // 3 minutes = 180 seconds
-      planName: '3 Minute Trial (3 నిమిషాల ఉచిత ట్రయల్)',
+      planName: '3-Minute Trial (Free Trial)',
       isTrial: true,
     };
   }
 
   if (cleanDevice.length !== 8) {
-    return { valid: false, days: 0, planName: '', error: 'చెల్లని 8-అంకెల TV డివైస్ కోడ్' };
+    return { valid: false, days: 0, planName: '', error: 'Invalid 8-digit TV device code' };
   }
 
   const { code30Days, code30DaysAlt, code60Days, code365Days } = calculateActivationCodes(cleanDevice);
 
   // 2. Check 30 Days match (tvCode / 3 or tvCode / 30)
   if (cleanCode === code30Days || cleanCode === code30DaysAlt) {
-    return { valid: true, days: 30, durationMs: 30 * 24 * 60 * 60 * 1000, planName: '30 Days Activation (30 రోజుల ప్లాన్)' };
+    return { valid: true, days: 30, durationMs: 30 * 24 * 60 * 60 * 1000, planName: '30 Days Activation Plan' };
   }
 
   // 3. Check 60 Days match
   if (cleanCode === code60Days) {
-    return { valid: true, days: 60, durationMs: 60 * 24 * 60 * 60 * 1000, planName: '60 Days Plan (2 నెలల ప్లాన్)' };
+    return { valid: true, days: 60, durationMs: 60 * 24 * 60 * 60 * 1000, planName: '60 Days Plan (2 Months)' };
   }
 
   // 4. Check 365 Days match
   if (cleanCode === code365Days) {
-    return { valid: true, days: 365, durationMs: 365 * 24 * 60 * 60 * 1000, planName: '1 Year License (1 సంవత్సరం ప్లాన్)' };
+    return { valid: true, days: 365, durationMs: 365 * 24 * 60 * 60 * 1000, planName: '1 Year License Plan' };
   }
 
   // 5. Master / Admin Override Keys for testing
   if (cleanCode === '99999999' || cleanCode === '77777777' || cleanCode === '999999' || cleanCode === '777777') {
-    return { valid: true, days: 365, durationMs: 365 * 24 * 60 * 60 * 1000, planName: 'Master Admin License (1 సంవత్సరం)' };
+    return { valid: true, days: 365, durationMs: 365 * 24 * 60 * 60 * 1000, planName: 'Master Admin License (1 Year)' };
   }
 
   return { 
     valid: false, 
     days: 0, 
     planName: '', 
-    error: 'చెల్లని యాక్టివేషన్ కోడ్! దయచేసి సరైన కోడ్ ఎంటర్ చేయండి.' 
+    error: 'Invalid activation code! Please enter the correct code.' 
   };
 }
 
@@ -260,7 +260,7 @@ export function getActivationStatus(): ActivationStatus {
         remainingMinutes: 0,
         remainingSeconds: 0,
         remainingTimeFormatted: '0s',
-        expiresAtDate: 'యాక్టివేట్ కాలేదు',
+        expiresAtDate: 'Not Activated',
         daysGranted: 0,
         planName: 'Not Activated',
         trialUsed,
@@ -283,7 +283,7 @@ export function getActivationStatus(): ActivationStatus {
         remainingMinutes: 0,
         remainingSeconds: 0,
         remainingTimeFormatted: '0s',
-        expiresAtDate: 'డివైస్ మారినది',
+        expiresAtDate: 'Device Mismatched',
         daysGranted: 0,
         planName: 'Device Mismatch',
         trialUsed,
@@ -304,7 +304,7 @@ export function getActivationStatus(): ActivationStatus {
         remainingMinutes: 0,
         remainingSeconds: 0,
         remainingTimeFormatted: '0s',
-        expiresAtDate: new Date(data.expiresAt).toLocaleDateString('te-IN', {
+        expiresAtDate: new Date(data.expiresAt).toLocaleDateString('en-US', {
           day: 'numeric',
           month: 'short',
           year: 'numeric',
@@ -313,7 +313,7 @@ export function getActivationStatus(): ActivationStatus {
           second: '2-digit',
         }),
         daysGranted: data.daysGranted,
-        planName: data.isTrial ? '3-Minute Trial Expired' : 'Expired (గడువు ముగిసింది)',
+        planName: data.isTrial ? '3-Minute Trial Expired' : 'Expired',
         trialUsed,
         trialRemainingUses,
       };
@@ -466,3 +466,8 @@ export function resetActivation(): void {
     localStorage.removeItem(STORAGE_KEY_ACTIVATION);
   } catch {}
 }
+
+// Aliases for compatibility
+export const getOrGenerateDeviceCode = getDeviceCode;
+export const regenerateDeviceCode = generateNewDeviceCode;
+export const verifyAndApplyActivation = applyActivation;

@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   Power, Volume2, VolumeX, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, 
   RotateCcw, Home, Menu, Maximize, Minimize,
-  HelpCircle, X, Heart, KeyRound
+  X, Heart, KeyRound, LayoutGrid, Grid3X3, Cloud
 } from 'lucide-react';
 import { sfx } from '../utils/audio';
 
@@ -25,8 +25,10 @@ interface VirtualRemoteProps {
   onVolumeChange: (delta: number) => void;
   onChannelStep: (delta: number) => void;
   onNumberPress: (digit: string) => void;
-  onOpenHelp: () => void;
   onOpenActivation?: () => void;
+  onOpenEPG?: () => void;
+  onOpenTVMode?: () => void;
+  onOpenGoogleDrive?: () => void;
 }
 
 export const VirtualRemote: React.FC<VirtualRemoteProps> = ({
@@ -48,8 +50,10 @@ export const VirtualRemote: React.FC<VirtualRemoteProps> = ({
   onVolumeChange,
   onChannelStep,
   onNumberPress,
-  onOpenHelp,
   onOpenActivation,
+  onOpenEPG,
+  onOpenTVMode,
+  onOpenGoogleDrive,
 }) => {
   if (!isOpen) return null;
 
@@ -74,19 +78,11 @@ export const VirtualRemote: React.FC<VirtualRemoteProps> = ({
               id="remote-activation-btn"
               onClick={onOpenActivation}
               className="p-1.5 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-amber-400 transition-colors"
-              title="Device Activation / లైసెన్స్"
+              title="Device Activation / License"
             >
               <KeyRound className="w-4 h-4" />
             </button>
           )}
-          <button
-            id="remote-help-btn"
-            onClick={onOpenHelp}
-            className="p-1.5 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-amber-400 transition-colors"
-            title="Keyboard Shortcuts Help"
-          >
-            <HelpCircle className="w-4 h-4" />
-          </button>
           <button
             id="close-virtual-remote-btn"
             onClick={onClose}
@@ -143,6 +139,51 @@ export const VirtualRemote: React.FC<VirtualRemoteProps> = ({
           <span className="text-[9px] font-bold">FULLSCREEN</span>
         </button>
       </div>
+
+      {/* 2 Quick Navigation Buttons: 1. EPG (6 CH) & 2. ALL CHANNEL LIST */}
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          id="remote-epg-6ch-btn"
+          onClick={() => {
+            sfx.playOk();
+            if (onOpenEPG) onOpenEPG();
+          }}
+          className="flex items-center justify-center gap-1.5 p-2 rounded-2xl bg-blue-950 hover:bg-blue-900 border border-blue-500/50 text-cyan-300 transition-all active:scale-95 cursor-pointer shadow-md"
+          title="EPG 6-Channel Grid View"
+        >
+          <LayoutGrid className="w-3.5 h-3.5 text-cyan-400" />
+          <span className="text-[10px] font-black tracking-wide">1. EPG (6 CH)</span>
+        </button>
+
+        <button
+          id="remote-all-channel-list-btn"
+          onClick={() => {
+            sfx.playOk();
+            onMenuPress();
+          }}
+          className="flex items-center justify-center gap-1.5 p-2 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/60 text-amber-300 transition-all active:scale-95 cursor-pointer shadow-md"
+          title="All Channel List / Channel Guide"
+        >
+          <Menu className="w-3.5 h-3.5 text-amber-400" />
+          <span className="text-[10px] font-black tracking-wide">2. ALL CHANNELS</span>
+        </button>
+      </div>
+
+      {/* Google Drive Cloud Button */}
+      {onOpenGoogleDrive && (
+        <button
+          id="remote-google-drive-btn"
+          onClick={() => {
+            sfx.playOk();
+            onOpenGoogleDrive();
+          }}
+          className="flex items-center justify-center gap-1.5 p-2 rounded-2xl bg-blue-900/40 hover:bg-blue-800/60 border border-blue-400/40 text-blue-300 hover:text-white transition-all active:scale-95 cursor-pointer shadow-md"
+          title="Google Drive Playlists & Anti-Theft Backup"
+        >
+          <Cloud className="w-3.5 h-3.5 text-blue-400" />
+          <span className="text-[10px] font-bold tracking-wide">GOOGLE DRIVE CLOUD</span>
+        </button>
+      )}
 
       {/* D-PAD DIRECTIONAL WHEEL WITH CENTRAL 'OK' BUTTON */}
       <div className="flex flex-col items-center justify-center my-1">

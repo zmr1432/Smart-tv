@@ -5,40 +5,57 @@ import { VideoPlayer } from './components/VideoPlayer';
 import { OSDOverlay } from './components/OSDOverlay';
 import { CategoryMenu } from './components/CategoryMenu';
 import { VirtualRemote } from './components/VirtualRemote';
-import { HelpModal } from './components/HelpModal';
 import { CornerLogo } from './components/CornerLogo';
 import { ActivationModal } from './components/ActivationModal';
+import { LanguageModal } from './components/LanguageModal';
+import { AppInstallAlertModal } from './components/AppInstallAlertModal';
 import { getActivationStatus } from './utils/activation';
+import { checkIsAppInstalled } from './utils/usePWAInstall';
+import { getStoredTeluguChannels, syncTeluguChannelsFromUrl } from './utils/channelSync';
+import { installAntiTamperProtection } from './utils/securityGuard';
 import { sfx } from './utils/audio';
 import { Smartphone, RotateCw } from 'lucide-react';
 import { isMobileDevice, isSmartTVDevice, requestMobileLandscapeFullscreen } from './utils/device';
 import { MobileGestureHUD } from './components/MobileGestureHUD';
 import { MobileHeaderBar } from './components/MobileHeaderBar';
+import { MultiChannelGrid } from './components/MultiChannelGrid';
 
 export default function App() {
+  // Live Dynamic Channels populated fresh from user Dropbox source
+  const [channels, setChannels] = useState<Channel[]>(() => getStoredTeluguChannels());
+
   // Current playing channel
-  const [currentChannel, setCurrentChannel] = useState<Channel>(CHANNELS[0]);
+  const [currentChannel, setCurrentChannel] = useState<Channel>(() => {
+    const initialList = getStoredTeluguChannels();
+    return initialList[0] || CHANNELS[0];
+  });
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [volume, setVolume] = useState<number>(80);
   const [showVolumeBar, setShowVolumeBar] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [multiViewMode, setMultiViewMode] = useState<'none' | 'epg6' | 'tv9'>('none');
+
+  // Live Channel sync status
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   // Recently watched channels (tracks last 5 channels for quick access)
   const [recentlyWatched, setRecentlyWatched] = useState<Channel[]>(() => {
     try {
       const saved = localStorage.getItem('smart_tv_recently_watched');
+      const initialList = getStoredTeluguChannels();
       if (saved) {
         const parsedIds: string[] = JSON.parse(saved);
         const matched = parsedIds
-          .map(id => CHANNELS.find(c => c.id === id))
+          .map(id => initialList.find(c => c.id === id))
           .filter((c): c is Channel => Boolean(c));
         if (matched.length > 0) return matched.slice(0, 5);
       }
+      return [initialList[0] || CHANNELS[0]];
     } catch (e) {
       console.error('Failed to load recently watched', e);
+      return [CHANNELS[0]];
     }
-    return [CHANNELS[0]];
   });
 
   // Favorites system (persisted in localStorage)
@@ -47,27 +64,82 @@ export default function App() {
       const saved = localStorage.getItem('smart_tv_favorites');
       if (saved) {
         const parsed: string[] = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          const valid = parsed.filter(id => CHANNELS.some(c => c.id === id));
-          if (valid.length > 0) return valid;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
         }
       }
     } catch (e) {
       console.error('Failed to load favorites', e);
     }
     // Default initial favorites
-    return ['etv-telugu', 'maa-tv'];
+    return ['telugu-61-tv9-telugu', 'telugu-109-star-maa-hd'];
   });
 
   // Derived list of favorite Channel objects
   const favoriteChannels = favoriteChannelIds
-    .map(id => CHANNELS.find(c => c.id === id))
+    .map(id => channels.find(c => c.id === id))
     .filter((c): c is Channel => Boolean(c));
 
   // Check if channel is favorite
   const isFavorite = useCallback((channelId: string) => {
     return favoriteChannelIds.includes(channelId);
   }, [favoriteChannelIds]);
+
+  // Channel List Menu State (Requested: opens on OK button)
+  const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
+  const [isLanguageModalOpen, setIsLanguageModalOpen] = useState<boolean>(false);
+  const [focusedIndex, setFocusedIndex] = useState<number>(0);
+
+  // Synchronize channels dynamically and silently in the background
+  const handleSyncChannels = useCallback(async (_isInitial = false) => {
+    setIsSyncing(true);
+    try {
+      const res = await syncTeluguChannelsFromUrl();
+      if (res.success && res.channels.length > 0) {
+        setChannels(res.channels);
+        // If current channel was removed or changed, keep a valid current channel
+        setCurrentChannel(prev => {
+          const match = res.channels.find(c => c.id === prev.id || c.number === prev.number);
+          return match || res.channels[0];
+        });
+      }
+    } catch {
+      // Silent error handling in background
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
+
+  // On App Open: Immediately fetch latest channel updates from the Dropbox link
+  useEffect(() => {
+    handleSyncChannels(true);
+
+    // Listen for custom event updates
+    const handleExternalChannels = (e: any) => {
+      if (e.detail?.channels) {
+        setChannels(e.detail.channels);
+      }
+    };
+    window.addEventListener('channels-updated', handleExternalChannels);
+
+    // Auto-sync in background every 60 seconds
+    const interval = setInterval(() => {
+      handleSyncChannels(true);
+    }, 60000);
+
+    return () => {
+      window.removeEventListener('channels-updated', handleExternalChannels);
+      clearInterval(interval);
+    };
+  }, [handleSyncChannels]);
+
+  // Install anti-inspection and anti-tamper shields
+  useEffect(() => {
+    const uninstall = installAntiTamperProtection();
+    return () => {
+      uninstall();
+    };
+  }, []);
 
   // Toggle favorite channel
   const toggleFavorite = useCallback((channelId: string) => {
@@ -90,18 +162,21 @@ export default function App() {
     });
   }, []);
 
-  // Channel List Menu State (Requested: opens on OK button)
-  const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
-  const [focusedIndex, setFocusedIndex] = useState<number>(0);
-
   // OSD and Remote UI State
   const [isOSDVisible, setIsOSDVisible] = useState<boolean>(true);
   const [isRemoteOpen, setIsRemoteOpen] = useState<boolean>(false);
-  const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
   const [isActivationOpen, setIsActivationOpen] = useState<boolean>(() => {
     try {
       const status = getActivationStatus();
       return !status.isActivated;
+    } catch {
+      return false;
+    }
+  });
+  // App install alert before activation (hidden if app is already installed)
+  const [showInstallAlert, setShowInstallAlert] = useState<boolean>(() => {
+    try {
+      return !checkIsAppInstalled() && !getActivationStatus().isActivated;
     } catch {
       return false;
     }
@@ -142,6 +217,19 @@ export default function App() {
     return () => clearInterval(checkInterval);
   }, []);
 
+  // Stop main player when EPG is running, Auto-play main player when EPG is closed
+  const prevMultiViewModeRef = useRef<'none' | 'epg6' | 'tv9'>('none');
+  useEffect(() => {
+    if (multiViewMode !== 'none') {
+      // EPG opened -> STOP main player immediately to save bandwidth & prevent sound overlap
+      setIsPlaying(false);
+    } else if (prevMultiViewModeRef.current !== 'none' && multiViewMode === 'none') {
+      // EPG closed -> AUTO PLAY main player immediately
+      setIsPlaying(true);
+    }
+    prevMultiViewModeRef.current = multiViewMode;
+  }, [multiViewMode]);
+
   // Sync mobile screen size and orientation
   useEffect(() => {
     const handleResize = () => {
@@ -181,9 +269,9 @@ export default function App() {
     };
   }, []);
 
-  const osdTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const volumeTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const numberTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const osdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const volumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const numberTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const appContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Show OSD temporarily
@@ -223,9 +311,9 @@ export default function App() {
   const openCategoryMenu = useCallback(() => {
     sfx.playOk();
     setIsMenuOpen(true);
-    const currIdx = CHANNELS.findIndex(c => c.id === currentChannel.id);
+    const currIdx = channels.findIndex(c => c.id === currentChannel.id);
     setFocusedIndex(currIdx >= 0 ? currIdx : 0);
-  }, [currentChannel.id]);
+  }, [channels, currentChannel.id]);
 
   // Close Category Menu
   const closeCategoryMenu = useCallback(() => {
@@ -262,13 +350,13 @@ export default function App() {
 
   // Surf Channel Up / Down
   const stepChannel = useCallback((direction: number) => {
-    const currentIndex = CHANNELS.findIndex(c => c.id === currentChannel.id);
+    const currentIndex = channels.findIndex(c => c.id === currentChannel.id);
     let nextIndex = currentIndex + direction;
-    if (nextIndex < 0) nextIndex = CHANNELS.length - 1;
-    if (nextIndex >= CHANNELS.length) nextIndex = 0;
+    if (nextIndex < 0) nextIndex = channels.length - 1;
+    if (nextIndex >= channels.length) nextIndex = 0;
     
-    changeChannel(CHANNELS[nextIndex]);
-  }, [currentChannel.id, changeChannel]);
+    changeChannel(channels[nextIndex]);
+  }, [channels, currentChannel.id, changeChannel]);
 
   // Adjust Volume
   const adjustVolume = useCallback((delta: number) => {
@@ -295,7 +383,7 @@ export default function App() {
     type: null,
     direction: null,
   });
-  const gestureTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const gestureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showGestureIndicator = useCallback((type: 'channel' | 'volume', direction: 'next' | 'prev' | null) => {
     setGestureFeedback({
@@ -317,7 +405,7 @@ export default function App() {
   const gestureAccumulatedVolRef = useRef<number>(0);
 
   const handleGestureStart = useCallback((clientX: number, clientY: number, target: HTMLElement) => {
-    if (isMenuOpen || isHelpOpen || isRemoteOpen) return;
+    if (isMenuOpen || isRemoteOpen) return;
     if (target.closest('button, input, select, textarea, [role="button"], #mobile-landscape-toggle-btn')) return;
 
     gestureStartRef.current = { x: clientX, y: clientY, time: Date.now() };
@@ -325,7 +413,7 @@ export default function App() {
     gestureLockedRef.current = null;
     gestureSwitchedChannelRef.current = false;
     gestureAccumulatedVolRef.current = 0;
-  }, [isMenuOpen, isHelpOpen, isRemoteOpen]);
+  }, [isMenuOpen, isRemoteOpen]);
 
   const handleGestureMove = useCallback((clientX: number, clientY: number) => {
     if (!gestureStartRef.current) return;
@@ -457,7 +545,7 @@ export default function App() {
       
       numberTimerRef.current = setTimeout(() => {
         const parsed = parseInt(updated, 10);
-        const match = CHANNELS.find(ch => ch.number === parsed);
+        const match = channels.find(ch => ch.number === parsed);
         if (match) {
           sfx.playChannelSwitch();
           changeChannel(match);
@@ -467,7 +555,47 @@ export default function App() {
 
       return updated;
     });
-  }, [changeChannel]);
+  }, [channels, changeChannel]);
+
+  // Prevent browser context menu (long press / right click options popup)
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent | TouchEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    };
+    window.addEventListener('contextmenu', handleContextMenu, { capture: true });
+    document.addEventListener('contextmenu', handleContextMenu, { capture: true });
+    return () => {
+      window.removeEventListener('contextmenu', handleContextMenu, { capture: true });
+      document.removeEventListener('contextmenu', handleContextMenu, { capture: true });
+    };
+  }, []);
+
+  // Ensure Audio is UNMUTED and active on launch and on first user interaction
+  useEffect(() => {
+    setIsMuted(false);
+    const unlockAudio = () => {
+      setIsMuted(false);
+      const video = document.getElementById('main-tv-video-element') as HTMLVideoElement | null;
+      if (video) {
+        video.muted = false;
+        video.volume = Math.min(1, Math.max(0, volume / 100));
+        if (video.paused) {
+          video.play().catch(() => {});
+        }
+      }
+    };
+
+    window.addEventListener('pointerdown', unlockAudio, { once: true });
+    window.addEventListener('touchstart', unlockAudio, { once: true });
+    window.addEventListener('keydown', unlockAudio, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+  }, [volume]);
 
   // Global Remote Control / Keyboard Listener
   useEffect(() => {
@@ -485,10 +613,11 @@ export default function App() {
         return;
       }
 
-      // If Help Modal is open
-      if (isHelpOpen) {
-        if (e.key === 'Escape' || e.key === 'Enter') {
-          setIsHelpOpen(false);
+      // If MultiChannelGrid is active, it handles its own navigation
+      if (multiViewMode !== 'none') {
+        if (e.key === 'Escape' || e.key === 'Backspace') {
+          sfx.playBack();
+          setMultiViewMode('none');
         }
         return;
       }
@@ -503,7 +632,7 @@ export default function App() {
 
         // Blue Key (B): Toggle Favorite on highlighted channel
         if (e.key === 'b' || e.key === 'B') {
-          const ch = CHANNELS[focusedIndex];
+          const ch = channels[focusedIndex];
           if (ch) toggleFavorite(ch.id);
           return;
         }
@@ -518,27 +647,27 @@ export default function App() {
         // ArrowRight or PageDown: Quick jump down 5 channels
         if (e.key === 'ArrowRight' || e.key === 'PageDown') {
           sfx.playTick();
-          setFocusedIndex(prev => Math.min(CHANNELS.length - 1, prev + 5));
+          setFocusedIndex(prev => Math.min(channels.length - 1, prev + 5));
           return;
         }
 
         // Up: Previous channel in list
         if (e.key === 'ArrowUp') {
           sfx.playTick();
-          setFocusedIndex(prev => (prev > 0 ? prev - 1 : CHANNELS.length - 1));
+          setFocusedIndex(prev => (prev > 0 ? prev - 1 : channels.length - 1));
           return;
         }
 
         // Down: Next channel in list
         if (e.key === 'ArrowDown') {
           sfx.playTick();
-          setFocusedIndex(prev => (prev < CHANNELS.length - 1 ? prev + 1 : 0));
+          setFocusedIndex(prev => (prev < channels.length - 1 ? prev + 1 : 0));
           return;
         }
 
         // "OK" button (Enter or Space) while in menu: Tune to highlighted channel
         if (e.key === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') {
-          const selectedChannel = CHANNELS[focusedIndex];
+          const selectedChannel = channels[focusedIndex];
           if (selectedChannel) {
             sfx.playChannelSwitch();
             changeChannel(selectedChannel);
@@ -629,9 +758,28 @@ export default function App() {
         return;
       }
 
-      // Help Modal: H or ?
-      if (e.key === 'h' || e.key === 'H' || e.key === '?') {
-        setIsHelpOpen(prev => !prev);
+      // EPG 6-Channel Grid: E
+      if (e.key === 'e' || e.key === 'E') {
+        sfx.playOk();
+        closeCategoryMenu();
+        setMultiViewMode('epg6');
+        return;
+      }
+
+      // TV Mode 9-Channel Grid: T (Visible/Available only on TV, disabled on mobile)
+      if (e.key === 't' || e.key === 'T') {
+        if (!isMobileDevice()) {
+          sfx.playOk();
+          closeCategoryMenu();
+          setMultiViewMode('tv9');
+          return;
+        }
+      }
+
+      // Sync Channels from Dropbox: S
+      if (e.key === 's' || e.key === 'S') {
+        sfx.playTick();
+        handleSyncChannels(false);
         return;
       }
 
@@ -647,9 +795,9 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     isMenuOpen,
-    isHelpOpen,
     isActivationOpen,
     focusedIndex,
+    channels,
     openCategoryMenu,
     closeCategoryMenu,
     changeChannel,
@@ -661,7 +809,8 @@ export default function App() {
     favoriteChannels,
     recentlyWatched,
     toggleFavorite,
-    currentChannel.id
+    currentChannel.id,
+    handleSyncChannels,
   ]);
 
   // Initial OSD display on mount
@@ -687,8 +836,13 @@ export default function App() {
     <div
       ref={appContainerRef}
       id="smart-tv-app-root"
-      style={mobileLandscapeStyles}
+      style={{ ...mobileLandscapeStyles, WebkitTouchCallout: 'none', userSelect: 'none' }}
       className="relative w-screen h-screen overflow-hidden bg-black text-white font-sans select-none touch-none"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }}
       onTouchStart={(e) => {
         if (e.touches.length > 0) {
           const t = e.touches[0];
@@ -730,8 +884,8 @@ export default function App() {
       {/* 1. Full Screen Video Player */}
       <VideoPlayer
         channel={currentChannel}
-        isPlaying={isPlaying}
-        isMuted={isMuted}
+        isPlaying={isPlaying && multiViewMode === 'none'}
+        isMuted={isMuted || multiViewMode !== 'none'}
         volume={volume}
         onPlayStateChange={setIsPlaying}
         onVideoClick={triggerOSD}
@@ -753,18 +907,24 @@ export default function App() {
         onOpenMenu={openCategoryMenu}
         onToggleRemote={() => setIsRemoteOpen(prev => !prev)}
         isRemoteOpen={isRemoteOpen}
-        onOpenHelp={() => setIsHelpOpen(true)}
       />
 
-      {/* 2.2 Mobile-Only Small Menu Button on Right Side (Never visible in TV version) */}
-      {isMobile && !isSmartTVDevice() && (
-        <MobileHeaderBar
-          isMenuOpen={isMenuOpen}
-          onOpenMenu={openCategoryMenu}
-        />
-      )}
+      {/* 2.2 Menu Button with 3 sub-buttons (1: EPG 6 CH, 2: All Channels, 3: App Language) */}
+      <MobileHeaderBar
+        isMenuOpen={isMenuOpen}
+        onOpenMenu={openCategoryMenu}
+        onOpenEPG={() => {
+          closeCategoryMenu();
+          setMultiViewMode('epg6');
+        }}
+        onOpenLanguage={() => setIsLanguageModalOpen(true)}
+        onOpenTVMode={() => {
+          closeCategoryMenu();
+          setMultiViewMode('tv9');
+        }}
+      />
 
-      {/* 2.5 Right-Side Corner Logo (Requested by User) */}
+      {/* 2.5 Right-Side Corner Watermark Logo */}
       <CornerLogo
         channelName={currentChannel.name}
         isMenuOpen={isMenuOpen}
@@ -774,7 +934,7 @@ export default function App() {
       <CategoryMenu
         isOpen={isMenuOpen}
         currentChannel={currentChannel}
-        channels={CHANNELS}
+        channels={channels}
         favoriteChannelIds={favoriteChannelIds}
         focusedIndex={focusedIndex}
         onSelectChannel={(channel) => {
@@ -785,7 +945,39 @@ export default function App() {
         onClose={closeCategoryMenu}
         setFocusedIndex={setFocusedIndex}
         onOpenActivation={() => setIsActivationOpen(true)}
+        onOpenLanguage={() => setIsLanguageModalOpen(true)}
+        onOpenEPG={() => {
+          closeCategoryMenu();
+          setMultiViewMode('epg6');
+        }}
+        onOpenTVMode={() => {
+          if (!isMobileDevice()) {
+            closeCategoryMenu();
+            setMultiViewMode('tv9');
+          }
+        }}
+        onRefreshChannels={() => handleSyncChannels(false)}
+        isSyncing={isSyncing}
       />
+
+      {/* 3.5 Multi-Channel Grid Overlay (1. EPG 6 CH / 2. TV Mode 9 CH on TV only) */}
+      {multiViewMode !== 'none' && (
+        <MultiChannelGrid
+          mode={isMobileDevice() ? 'epg6' : multiViewMode}
+          channels={channels}
+          globalVolume={volume}
+          onSelectChannelFullScreen={(channel) => {
+            changeChannel(channel);
+            setMultiViewMode('none');
+            setIsPlaying(true);
+          }}
+          onClose={() => {
+            setMultiViewMode('none');
+            setIsPlaying(true);
+          }}
+          onSwitchMode={(mode) => setMultiViewMode(isMobileDevice() ? 'epg6' : mode)}
+        />
+      )}
 
       {/* 4. Virtual Smart TV Remote Control Widget */}
       <VirtualRemote
@@ -795,43 +987,55 @@ export default function App() {
         isFavorite={isFavorite(currentChannel.id)}
         onToggleFavorite={() => toggleFavorite(currentChannel.id)}
         onClose={() => setIsRemoteOpen(false)}
+        onOpenEPG={() => {
+          setIsRemoteOpen(false);
+          setMultiViewMode('epg6');
+        }}
+        onOpenTVMode={() => {
+          setIsRemoteOpen(false);
+          setMultiViewMode('tv9');
+        }}
         onDpadUp={() => {
-          if (isMenuOpen) {
+          if (multiViewMode !== 'none' || isMenuOpen) {
             window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
           } else {
             stepChannel(-1);
           }
         }}
         onDpadDown={() => {
-          if (isMenuOpen) {
+          if (multiViewMode !== 'none' || isMenuOpen) {
             window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
           } else {
             stepChannel(1);
           }
         }}
         onDpadLeft={() => {
-          if (isMenuOpen) {
+          if (multiViewMode !== 'none' || isMenuOpen) {
             window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
           } else {
             adjustVolume(-5);
           }
         }}
         onDpadRight={() => {
-          if (isMenuOpen) {
+          if (multiViewMode !== 'none' || isMenuOpen) {
             window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
           } else {
             adjustVolume(5);
           }
         }}
         onOkPress={() => {
-          if (!isMenuOpen) {
+          if (multiViewMode !== 'none') {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+          } else if (!isMenuOpen) {
             openCategoryMenu();
           } else {
             window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
           }
         }}
         onBackPress={() => {
-          if (isMenuOpen) {
+          if (multiViewMode !== 'none') {
+            setMultiViewMode('none');
+          } else if (isMenuOpen) {
             closeCategoryMenu();
           } else {
             triggerOSD();
@@ -853,14 +1057,13 @@ export default function App() {
         onVolumeChange={adjustVolume}
         onChannelStep={stepChannel}
         onNumberPress={handleDigitInput}
-        onOpenHelp={() => setIsHelpOpen(true)}
         onOpenActivation={() => setIsActivationOpen(true)}
       />
 
-      {/* 5. Shortcuts Help Modal */}
-      <HelpModal
-        isOpen={isHelpOpen}
-        onClose={() => setIsHelpOpen(false)}
+      {/* 5.4 App Install Alert Dialog */}
+      <AppInstallAlertModal
+        isOpen={showInstallAlert}
+        onClose={() => setShowInstallAlert(false)}
       />
 
       {/* 5.5 App Activation Modal (6-Digit TV Code & Code Generator) */}
@@ -869,15 +1072,22 @@ export default function App() {
         onClose={() => setIsActivationOpen(false)}
         onActivated={() => {
           setIsActivationOpen(false);
+          setShowInstallAlert(false);
           setIsPlaying(true);
         }}
+      />
+
+      {/* 5.6 App Language Selection Modal (English, Telugu, Kannada, Tamil) */}
+      <LanguageModal
+        isOpen={isLanguageModalOpen}
+        onClose={() => setIsLanguageModalOpen(false)}
       />
 
       {/* 6. Mobile Portrait Landscape Helper (Only for mobile in portrait mode; TV version is untouched) */}
       {isMobile && isPortrait && (
         <div 
           id="mobile-landscape-helper"
-          className="fixed bottom-6 right-6 z-40 flex items-center pointer-events-auto"
+          className="fixed bottom-6 left-6 z-40 flex items-center pointer-events-auto"
         >
           <button
             id="mobile-landscape-toggle-btn"
@@ -890,7 +1100,7 @@ export default function App() {
             title="Switch Mobile Landscape Fullscreen"
           >
             <RotateCw className="w-4 h-4" />
-            <span>{forceMobileLandscape ? 'నార్మల్' : 'ల్యాండ్‌స్కేప్'}</span>
+            <span>{forceMobileLandscape ? 'Normal' : 'Landscape'}</span>
           </button>
         </div>
       )}

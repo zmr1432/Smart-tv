@@ -1,17 +1,27 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
-  KeyRound, CheckCircle2, AlertCircle, Copy, Check, RotateCcw, 
-  ShieldCheck, X, Sparkles 
+  KeyRound, 
+  Tv, 
+  Copy, 
+  Check, 
+  RefreshCw, 
+  ShieldCheck, 
+  AlertCircle, 
+  X, 
+  Clock, 
+  Sparkles,
+  Calendar,
+  Delete
 } from 'lucide-react';
 import { 
-  getDeviceCode, 
-  applyActivation, 
-  getActivationStatus, 
-  generateNewDeviceCode,
+  getOrGenerateDeviceCode, 
+  regenerateDeviceCode, 
+  verifyAndApplyActivation, 
+  getActivationStatus,
   ActivationStatus 
 } from '../utils/activation';
 import { sfx } from '../utils/audio';
-import { DEFAULT_CORNER_LOGO } from './CornerLogo';
+import { getAppLanguage, onLanguageChange, t, AppLanguage } from '../utils/i18n';
 
 interface ActivationModalProps {
   isOpen: boolean;
@@ -24,57 +34,77 @@ export const ActivationModal: React.FC<ActivationModalProps> = ({
   onClose,
   onActivated,
 }) => {
-  const [deviceCode, setDeviceCodeState] = useState<string>(getDeviceCode());
-  const [enteredCode, setEnteredCode] = useState<string>('');
-  const [status, setStatus] = useState<ActivationStatus>(getActivationStatus());
-  const [copiedDevice, setCopiedDevice] = useState<boolean>(false);
+  const [currentLang, setCurrentLang] = useState<AppLanguage>(() => getAppLanguage());
+  const [deviceCode, setDeviceCode] = useState<string>(() => getOrGenerateDeviceCode());
+  const [inputCode, setInputCode] = useState<string>('');
+  const [status, setStatus] = useState<ActivationStatus>(() => getActivationStatus());
+  const [copied, setCopied] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [successMsg, setSuccessMsg] = useState<string>('');
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Refresh status on open and start live 1-second tick for countdowns
+  useEffect(() => {
+    return onLanguageChange((lang) => {
+      setCurrentLang(lang);
+    });
+  }, []);
+
+  // Sync state whenever opened
   useEffect(() => {
     if (isOpen) {
-      const curCode = getDeviceCode();
-      setDeviceCodeState(curCode);
+      const code = getOrGenerateDeviceCode();
+      setDeviceCode(code);
       setStatus(getActivationStatus());
       setErrorMsg('');
       setSuccessMsg('');
-      setEnteredCode('');
+      setInputCode('');
       setTimeout(() => inputRef.current?.focus(), 150);
 
-      const timer = setInterval(() => {
+      const interval = setInterval(() => {
         setStatus(getActivationStatus());
       }, 1000);
-      return () => clearInterval(timer);
+
+      return () => clearInterval(interval);
     }
   }, [isOpen]);
 
-  // Copy helper
-  const copyToClipboard = (text: string) => {
+  // Handle Copy Device Code
+  const handleCopyCode = () => {
     try {
-      navigator.clipboard.writeText(text);
+      navigator.clipboard.writeText(deviceCode);
       sfx.playTick();
-      setCopiedDevice(true);
-      setTimeout(() => setCopiedDevice(false), 2000);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     } catch {}
   };
 
-  // Perform activation
-  const handleActivate = useCallback((codeToUse?: string) => {
-    const code = (codeToUse || enteredCode).trim();
+  // Handle "కొత్త కోడ్" (Regenerate 8-digit device code)
+  const handleRegenerateCode = () => {
+    sfx.playTick();
+    const newCode = regenerateDeviceCode();
+    setDeviceCode(newCode);
+    setStatus(getActivationStatus());
+    setInputCode('');
+    setErrorMsg('');
+    setSuccessMsg(t('newCode', currentLang));
+    setTimeout(() => setSuccessMsg(''), 2500);
+  };
+
+  // Handle Activation Submit
+  const handleActivate = (codeToVerify?: string) => {
+    const code = (codeToVerify || inputCode).trim();
     if (!code) {
       sfx.playError();
-      setErrorMsg('దయచేసి యాక్టివేషన్ కోడ్ ఎంటర్ చేయండి.');
+      setErrorMsg(t('enterValidCode', currentLang));
       return;
     }
 
-    const result = applyActivation(code, deviceCode);
+    const result = verifyAndApplyActivation(code, deviceCode);
     if (result.success) {
       sfx.playSuccess();
       setErrorMsg('');
-      setSuccessMsg(`🎉 యాక్టివేషన్ విజయవంతమైంది! (${result.planName})`);
+      setSuccessMsg(`${t('activationSuccess', currentLang)} (${result.planName})`);
       setStatus(getActivationStatus());
       onActivated?.();
       setTimeout(() => {
@@ -82,43 +112,31 @@ export const ActivationModal: React.FC<ActivationModalProps> = ({
       }, 4000);
     } else {
       sfx.playError();
-      setErrorMsg(result.error || 'చెల్లని యాక్టివేషన్ కోడ్. దయచేసి సరైన కోడ్ ఎంటర్ చేయండి.');
+      setErrorMsg(result.error || t('invalidCode', currentLang));
     }
-  }, [deviceCode, enteredCode, onActivated]);
-
-  // Handle regenerating device code
-  const handleRegenerateDeviceCode = () => {
-    sfx.playTick();
-    const newCode = generateNewDeviceCode();
-    setDeviceCodeState(newCode);
-    setStatus(getActivationStatus());
-    setEnteredCode('');
-    setErrorMsg('');
-    setSuccessMsg('కొత్త 8-డిజిట్ TV కోడ్ రూపొందించబడింది.');
-    setTimeout(() => setSuccessMsg(''), 2500);
   };
 
-  // Virtual numpad key press
-  const handleNumpadPress = (digit: string) => {
+  // On-screen TV Keypad input
+  const handleKeypadPress = (digit: string) => {
     sfx.playTick();
     setErrorMsg('');
-    if (enteredCode.length < 10) {
-      setEnteredCode(prev => prev + digit);
+    if (inputCode.length < 12) {
+      setInputCode(prev => prev + digit);
     }
   };
 
   const handleBackspace = () => {
-    sfx.playBack();
-    setEnteredCode(prev => prev.slice(0, -1));
+    sfx.playTick();
+    setInputCode(prev => prev.slice(0, -1));
   };
 
   const handleClear = () => {
-    sfx.playBack();
-    setEnteredCode('');
+    sfx.playTick();
+    setInputCode('');
     setErrorMsg('');
   };
 
-  // Keyboard navigation for shortcuts
+  // Keyboard navigation & remote input
   useEffect(() => {
     if (!isOpen) return;
 
@@ -136,238 +154,212 @@ export const ActivationModal: React.FC<ActivationModalProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, handleActivate, onClose, status.isActivated]);
+  }, [isOpen, inputCode, deviceCode, status.isActivated]);
 
   if (!isOpen) return null;
 
   return (
     <div 
       id="app-activation-modal"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-neutral-950/90 backdrop-blur-xl animate-in fade-in duration-200 select-none overflow-y-auto"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && status.isActivated) {
-          sfx.playBack();
-          onClose();
-        }
-      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-xl animate-in fade-in duration-200 select-none overflow-y-auto"
     >
       <div 
-        className="relative w-full max-w-xl rounded-3xl bg-radial from-neutral-900 via-neutral-900 to-[#070b14] border border-amber-500/30 p-5 sm:p-7 shadow-[0_0_80px_rgba(245,158,11,0.15)] text-white space-y-4 my-auto"
+        className="w-full max-w-xl bg-zinc-950 border border-white/15 rounded-3xl shadow-2xl overflow-hidden flex flex-col my-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Top Header */}
-        <div className="flex items-center justify-between border-b border-white/10 pb-4">
+        {/* Header Bar */}
+        <div className="p-4 sm:p-5 bg-zinc-900/70 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img 
-              src={DEFAULT_CORNER_LOGO} 
-              alt="Logo" 
-              className="h-9 sm:h-11 max-w-[120px] object-contain filter drop-shadow" 
-            />
+            <div className="p-2.5 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-400">
+              <KeyRound className="w-5 h-5" />
+            </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg sm:text-xl font-black text-white tracking-tight flex items-center gap-1.5">
-                  <KeyRound className="w-5 h-5 text-amber-400" />
-                  <span>App Activation</span>
-                </h2>
-                {status.isActivated ? (
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>
-                      Active ({status.remainingDays >= 1 ? `${status.remainingDays} Days` : status.remainingTimeFormatted})
-                    </span>
-                  </span>
-                ) : (
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center gap-1 animate-pulse">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    <span>యాక్టివేషన్ అవసరం</span>
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-neutral-400">TV & Mobile Device License Activation</p>
+              <h2 className="text-base sm:text-lg font-black text-white tracking-wide">
+                {t('activationTitle', currentLang)}
+              </h2>
+              <span className="text-[11px] text-zinc-400">
+                {t('activationSubtitle', currentLang)}
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {status.isActivated && (
-              <button
-                id="close-activation-modal-btn"
-                onClick={() => {
-                  sfx.playBack();
-                  onClose();
-                }}
-                className="p-2 rounded-xl bg-white/10 hover:bg-rose-500/30 border border-white/15 text-neutral-300 hover:text-white transition-colors cursor-pointer"
-                title="Close"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
+          {status.isActivated && (
+            <button
+              onClick={onClose}
+              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+              title={t('close', currentLang)}
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
-        {/* DEVICE ACTIVATION CONTENT */}
-        <div className="space-y-4">
-          {/* 8-Digit Device TV Code Card */}
-          <div className="relative p-4 sm:p-5 rounded-3xl bg-neutral-950/80 border-2 border-amber-500/40 shadow-inner flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="text-center sm:text-left">
-              <span className="text-[11px] font-bold text-amber-400 uppercase tracking-widest block mb-1">
-                మీ TV / మొబైల్ కోడ్ (8-Digit Device Code)
+        {/* Content Body */}
+        <div className="p-4 sm:p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+          {/* 1. 8-Digit Device Code Card */}
+          <div className="p-4 rounded-2xl bg-zinc-900/80 border border-amber-500/30 flex flex-col gap-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
+                <Tv className="w-4 h-4 text-amber-400" />
+                <span>{t('yourDeviceCode', currentLang)}</span>
               </span>
-              <div className="flex items-center justify-center sm:justify-start gap-2">
-                <span className="text-3xl sm:text-4xl font-mono font-black text-white tracking-[0.2em] drop-shadow-md">
-                  {deviceCode}
-                </span>
+
+              {/* Regenerate Button */}
+              <button
+                onClick={handleRegenerateCode}
+                className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-zinc-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border border-white/10"
+                title={t('newCode', currentLang)}
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{t('newCode', currentLang)}</span>
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between bg-black/60 border border-white/10 rounded-xl px-4 py-3">
+              <div className="font-mono text-2xl sm:text-3xl font-black text-amber-400 tracking-[0.25em]">
+                {deviceCode}
               </div>
-              <p className="text-[11px] text-neutral-400 mt-1">
-                ఈ 8-అంకెల కోడ్ ద్వారా మీ యాక్టివేషన్ కోడ్ పొందండి.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => copyToClipboard(deviceCode)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-bold transition-all cursor-pointer active:scale-95"
-                title="Copy 8-digit Device Code"
-              >
-                {copiedDevice ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-emerald-300">Copied!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>కాపీ చేయండి</span>
-                  </>
-                )}
-              </button>
 
               <button
-                type="button"
-                onClick={handleRegenerateDeviceCode}
-                className="flex items-center gap-1 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-neutral-400 hover:text-white text-xs font-medium transition-all cursor-pointer"
-                title="Generate New 8-digit Code"
+                onClick={handleCopyCode}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition-all cursor-pointer"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>కొత్త కోడ్</span>
+                {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copied ? t('copied', currentLang) : t('copy', currentLang)}</span>
               </button>
             </div>
+
+            <p className="text-[11px] text-zinc-400">
+              {t('deviceCodeDesc', currentLang)}
+            </p>
           </div>
 
-          {/* 3-Minute Trial Text */}
-          <div className="flex items-center justify-center py-2 px-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs sm:text-sm font-bold tracking-wide text-center">
-            <span>3 నిమిషాల ట్రయల్ కోడ్ 1432</span>
+          {/* 2. Current Activation Status Card */}
+          <div className="p-3.5 rounded-2xl bg-zinc-900/60 border border-white/10 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-xl ${
+                status.isActivated ? 'bg-emerald-500/20 text-emerald-400' : status.isExpired ? 'bg-rose-500/20 text-rose-400' : 'bg-zinc-800 text-zinc-400'
+              }`}>
+                {status.isActivated ? <ShieldCheck className="w-5 h-5" /> : <Clock className="w-5 h-5" />}
+              </div>
+              <div>
+                <div className="text-xs font-black text-white flex items-center gap-1.5">
+                  <span>{t('statusLabel', currentLang)}</span>
+                  <span className={status.isActivated ? 'text-emerald-400' : status.isExpired ? 'text-rose-400' : 'text-amber-400'}>
+                    {status.isActivated ? t('statusActive', currentLang) : status.isExpired ? t('statusExpired', currentLang) : t('statusInactive', currentLang)}
+                  </span>
+                </div>
+                <div className="text-[11px] text-zinc-400 mt-0.5 flex items-center gap-2">
+                  {status.isActivated && (
+                    <>
+                      <span>{t('remainingTime', currentLang)} <strong className="text-white">{status.remainingTimeFormatted}</strong></span>
+                      <span>• {t('expiresAt', currentLang)} {status.expiresAtDate}</span>
+                    </>
+                  )}
+                  {!status.isActivated && (
+                    <span>{t('freeTrialHint', currentLang)} <strong className="text-cyan-400 font-mono">1432</strong></span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {status.isActivated && (
+              <span className="text-[10px] px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
+                {status.planName}
+              </span>
+            )}
           </div>
 
-          {/* Code Entry Input */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-neutral-300 block">
-              యాక్టివేషన్ కోడ్ ఎంటర్ చేయండి (Enter Activation Code)
+          {/* 4. Activation Code Input */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-zinc-300 block">
+              {t('enterActivationCode', currentLang)}
             </label>
-            <div className="flex items-center gap-2">
+
+            <div className="flex gap-2">
               <input
                 ref={inputRef}
                 type="text"
-                value={enteredCode}
+                value={inputCode}
                 onChange={(e) => {
                   setErrorMsg('');
-                  setEnteredCode(e.target.value.replace(/\D/g, '').slice(0, 8));
+                  setInputCode(e.target.value.replace(/\D/g, ''));
                 }}
-                placeholder="యాక్టివేషన్ కోడ్ నమోదు చేయండి"
-                className="flex-1 px-4 py-3 rounded-2xl bg-neutral-950 border-2 border-white/20 focus:border-amber-400 text-xl font-mono font-bold text-white tracking-widest placeholder-neutral-600 focus:outline-none transition-all shadow-inner text-center sm:text-left"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleActivate();
+                  }
+                }}
+                placeholder={t('codePlaceholder', currentLang)}
+                className="flex-1 px-4 py-3 bg-black/70 border border-white/20 rounded-xl text-white font-mono text-base tracking-widest focus:outline-none focus:border-amber-400 text-center"
               />
+
               <button
-                type="button"
                 onClick={() => handleActivate()}
-                className="px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-neutral-950 font-black text-sm transition-all shadow-lg shadow-amber-500/20 active:scale-95 cursor-pointer shrink-0"
+                className="px-5 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs sm:text-sm tracking-wide shadow-lg shadow-amber-500/20 transition-all cursor-pointer"
               >
-                యాక్టివేట్ చేయండి
+                {t('activateBtn', currentLang)}
               </button>
             </div>
+
+            {/* Error & Success Toasts */}
+            {errorMsg && (
+              <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+
+            {successMsg && (
+              <div className="p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                <Check className="w-4 h-4 shrink-0 text-emerald-400" />
+                <span>{successMsg}</span>
+              </div>
+            )}
           </div>
 
-          {/* Error or Success Feedback */}
-          {errorMsg && (
-            <div className="p-3 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-2 animate-in fade-in duration-200">
-              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
-
-          {successMsg && (
-            <div className="p-3.5 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-sm font-bold flex items-center gap-2.5 animate-in fade-in duration-200 shadow-lg">
-              <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-400" />
-              <span>{successMsg}</span>
-            </div>
-          )}
-
-          {/* Virtual TV Remote Numpad (Designed for TV Remote / Mobile) */}
-          <div className="p-3 rounded-2xl bg-neutral-950/60 border border-white/10 space-y-1.5">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block text-center">
-              TV Remote On-Screen Numpad
+          {/* 5. Smart TV On-Screen Number Keypad */}
+          <div className="p-3 bg-zinc-900/40 border border-white/10 rounded-2xl">
+            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-2 text-center">
+              {t('tvKeypad', currentLang)}
             </span>
-            <div className="grid grid-cols-3 gap-1.5 max-w-xs mx-auto">
-              {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(d => (
+            <div className="grid grid-cols-3 gap-2">
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
                 <button
-                  key={d}
-                  type="button"
-                  onClick={() => handleNumpadPress(d)}
-                  className="p-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 active:bg-amber-500 active:text-neutral-950 text-white font-mono font-bold text-lg transition-all border border-white/10 active:scale-95 cursor-pointer"
+                  key={digit}
+                  onClick={() => handleKeypadPress(digit)}
+                  className="py-2.5 rounded-xl bg-black/60 hover:bg-white/15 border border-white/10 text-white font-mono text-base font-bold transition-all active:scale-95 cursor-pointer"
                 >
-                  {d}
+                  {digit}
                 </button>
               ))}
               <button
-                type="button"
                 onClick={handleClear}
-                className="p-2.5 rounded-xl bg-neutral-900 hover:bg-rose-900/50 text-neutral-400 hover:text-rose-300 font-bold text-xs transition-all border border-white/10 cursor-pointer"
+                className="py-2.5 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/30 text-rose-300 font-bold text-xs transition-all active:scale-95 cursor-pointer"
               >
-                Clear
+                {t('clear', currentLang)}
               </button>
               <button
-                type="button"
-                onClick={() => handleNumpadPress('0')}
-                className="p-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 active:bg-amber-500 active:text-neutral-950 text-white font-mono font-bold text-lg transition-all border border-white/10 active:scale-95 cursor-pointer"
+                onClick={() => handleKeypadPress('0')}
+                className="py-2.5 rounded-xl bg-black/60 hover:bg-white/15 border border-white/10 text-white font-mono text-base font-bold transition-all active:scale-95 cursor-pointer"
               >
                 0
               </button>
               <button
-                type="button"
                 onClick={handleBackspace}
-                className="p-2.5 rounded-xl bg-neutral-900 hover:bg-amber-900/50 text-neutral-400 hover:text-amber-300 font-bold text-xs transition-all border border-white/10 cursor-pointer"
+                className="py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-white/10 text-zinc-300 font-bold text-xs transition-all active:scale-95 flex items-center justify-center cursor-pointer"
               >
-                ⌫
+                <Delete className="w-4 h-4" />
               </button>
             </div>
           </div>
+        </div>
 
-          {/* Current Active Plan Status Box (if active) */}
-          {status.isActivated && (
-            <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-200 flex flex-col sm:flex-row items-center justify-between gap-3 animate-in fade-in duration-200">
-              <div className="flex items-center gap-3 text-center sm:text-left">
-                <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
-                  <ShieldCheck className="w-6 h-6" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-black text-white">{status.planName}</h4>
-                  <p className="text-xs text-neutral-300">
-                    గడువు: <strong>{status.expiresAtDate}</strong> ({status.remainingTimeFormatted} మిగిలివుంది)
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  sfx.playBack();
-                  onClose();
-                }}
-                className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-neutral-950 text-xs font-black transition-colors cursor-pointer shrink-0"
-              >
-                టీవీ చూడండి (Continue)
-              </button>
-            </div>
-          )}
+        {/* Footer info */}
+        <div className="p-3 border-t border-white/10 bg-zinc-900/50 flex items-center justify-between text-[11px] text-zinc-400">
+          <span>Telugu Live TV License System</span>
+          <span className="text-zinc-500 font-medium">Smart TV & Mobile Activation</span>
         </div>
       </div>
     </div>
